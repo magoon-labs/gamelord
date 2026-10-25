@@ -11,6 +11,8 @@
     "lint": "oxlint -c ../../oxlint.config.ts",
     "typecheck": "tsgo --noEmit",
     "test": "vitest run",
+    "test:stories": "vitest run --project storybook",
+    "test:unit": "vitest run --project unit",
     "test:watch": "vitest",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
