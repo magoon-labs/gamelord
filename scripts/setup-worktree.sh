@@ -1,6 +1,7 @@
 #!/bin/bash
 # Setup script for git worktrees.
-# Symlinks shared files that aren't part of the git tree (credentials, env).
+# Symlinks shared files that aren't part of the git tree (credentials, env)
+# and the Turborepo cache, so worktrees reuse each other's task results.
 # Safe to run multiple times — skips files that already exist.
 #
 # Usage: ./scripts/setup-worktree.sh
@@ -41,6 +42,26 @@ if [ -f "$ENV_SOURCE" ]; then
   fi
 else
   echo "Warning: $ENV_SOURCE not found — artwork sync credentials will be missing"
+fi
+
+# --- Share the Turborepo cache ---
+# Point this worktree's .turbo/cache at the main repo's so turbo results are
+# reused across worktrees. Entries are content-hashed, so branches can share.
+# Only the cache is shared — each worktree keeps its own daemon state.
+CACHE_SOURCE="$MAIN_REPO/.turbo/cache"
+CACHE_TARGET="$WORKTREE_ROOT/.turbo/cache"
+
+mkdir -p "$CACHE_SOURCE" "$WORKTREE_ROOT/.turbo"
+if [ -L "$CACHE_TARGET" ]; then
+  echo "Turbo cache already shared — skipping"
+else
+  if [ -d "$CACHE_TARGET" ]; then
+    # Keep anything this worktree already cached
+    find "$CACHE_TARGET" -mindepth 1 -maxdepth 1 -exec mv -n {} "$CACHE_SOURCE/" \;
+    rm -rf "$CACHE_TARGET"
+  fi
+  ln -s "$CACHE_SOURCE" "$CACHE_TARGET"
+  echo "Symlinked turbo cache"
 fi
 
 echo "Worktree setup complete."
