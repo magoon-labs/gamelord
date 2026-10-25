@@ -1,10 +1,20 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["oxlint.config.ts", ".oxfmtrc*"],
   "tasks": {
+    "transit": {
+      "dependsOn": ["^transit"]
+    },
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": ["dist/**", "out/**"]
+    },
+    "bundle": {
+      "dependsOn": ["transit"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "env": ["SCREENSCRAPER_DEV_ID", "SCREENSCRAPER_DEV_PASSWORD", "SENTRY_*"],
+      "outputs": ["out/**"]
     },
     "dev": {
       "cache": false,
@@ -16,15 +26,12 @@
     },
     "format": {},
     "format:check": {},
-    "lint": {
-      "dependsOn": ["^lint"]
-    },
+    "lint": {},
     "test": {
-      "dependsOn": ["build"],
-      "inputs": ["src/**/*.tsx", "src/**/*.ts", "test/**/*.ts", "test/**/*.tsx"]
+      "dependsOn": ["transit"]
     },
     "typecheck": {
-      "dependsOn": ["^typecheck"]
+      "dependsOn": ["transit"]
     },
     "storybook": {
       "cache": false,

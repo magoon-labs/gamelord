@@ -17,22 +17,26 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # No CI job launches Electron; skip the ~100MB binary download.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+  TURBO_TELEMETRY_DISABLED: "1"
+
 jobs:
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
-    # Merge-queue runs execute every real job so each required check reports
-    # under its real name; the *-skip twins only run on push/pull_request.
+    # paths-filter diffs merge-group runs against merge_group.base_sha, so the
+    # queue skips the same irrelevant jobs a PR run does. Skipped jobs still
+    # report their required check name through the *-skip twins.
     outputs:
-      code: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.code }}
-      ui: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.ui }}
-      native: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.native }}
+      code: ${{ steps.filter.outputs.code }}
+      ui: ${{ steps.filter.outputs.ui }}
+      native: ${{ steps.filter.outputs.native }}
     steps:
       - uses: actions/checkout@v7
-        if: github.event_name != 'merge_group'
 
       - uses: dorny/paths-filter@v4
-        if: github.event_name != 'merge_group'
         id: filter
         with:
           filters: |
@@ -47,12 +51,15 @@ jobs:
               - 'tsconfig*.json'
               - 'oxlint.config.ts'
               - 'vercel.json'
+              - '.github/actions/**'
               - '.github/workflows/**'
             ui:
               - 'packages/ui/**'
               - 'apps/desktop/src/renderer/components/**'
             native:
               - 'apps/desktop/native/**'
+              - '.github/actions/**'
+              - '.github/workflows/ci.yml'
 
   lint-typecheck-format:
     name: Lint, Type Check & Format
@@ -62,23 +69,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/setup
         with:
-          node-version: 24
-          cache: pnpm
+          save-cache: "true"
 
-      - run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Type Check
-        run: pnpm typecheck
-
-      - name: Format Check
-        run: pnpm format:check
+      # One turbo invocation runs every check in parallel; --continue reports
+      # all failures instead of stopping at the first. `bundle` verifies the
+      # electron-vite production build compiles.
+      - name: Lint, type check, format check & bundle
+        run: pnpm exec turbo run lint typecheck format:check bundle --continue
 
   lint-typecheck-format-skip:
     name: Lint, Type Check & Format
@@ -96,26 +95,35 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install system dependencies
-        run: |
-          # Remove Microsoft repos that intermittently return 403 on GitHub Actions runners
-          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list
-          sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - uses: ./.github/actions/setup
 
-      - uses: pnpm/action-setup@v6
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(pnpm --filter @gamelord/ui exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@v7
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
         with:
-          node-version: 24
-          cache: pnpm
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-headless-shell
 
-      - run: pnpm install --frozen-lockfile
-
-      - name: Install Playwright Chromium (Storybook story tests)
-        run: pnpm --filter @gamelord/ui exec playwright install chromium --with-deps
+      # Vitest browser mode runs headless, which only needs the headless shell
+      # (not full Chromium). Installing is a no-op when the cache hit. The
+      # runner image usually ships every shared library the shell links
+      # against, so only fall back to apt (~9s) when ldd finds a gap.
+      - name: Install Playwright headless shell (Storybook story tests)
+        run: |
+          pnpm --filter @gamelord/ui exec playwright install chromium --only-shell
+          shell_bin=$(find ~/.cache/ms-playwright -type f -name chrome-headless-shell | head -n 1)
+          missing=$(ldd "$shell_bin" | grep "not found" || true)
+          if [[ -n "$missing" ]]; then
+            echo "Missing shared libraries, installing system deps:"
+            echo "$missing"
+            pnpm --filter @gamelord/ui exec playwright install-deps chromium-headless-shell
+          fi
 
       - name: Run tests
-        run: pnpm test
+        run: pnpm exec turbo run test --continue
 
   test-skip:
     name: Tests
@@ -135,23 +143,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/setup
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
+      # exitOnceUploaded: the job can't fail on visual diffs anyway
+      # (exitZeroOnChanges), and Chromatic reports snapshot results through
+      # its own commit status. Story render errors are already caught by the
+      # Storybook project in the Tests job.
       - name: Run Chromatic
         uses: chromaui/action@latest
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           workingDir: packages/ui
           exitZeroOnChanges: true
+          exitOnceUploaded: true
           autoAcceptChanges: main
-
 
   chromatic-skip:
     name: Visual Regression (Chromatic)
@@ -169,14 +174,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/setup
         with:
-          node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
+          save-cache: "true"
 
       - name: Build native addon
         working-directory: apps/desktop/native
