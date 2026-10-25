@@ -46,7 +46,7 @@
     "agentation": "^2.2.1",
     "autoprefixer": "^10.5.4",
     "chromatic": "^17.0.0",
-    "happy-dom": "^20.13.2",
+    "happy-dom": "^21.0.4",
     "playwright": "^1.62.1",
     "postcss": "^8.5.26",
     "prop-types": "^15.8.1",

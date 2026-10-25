@@ -42,7 +42,7 @@
     "electron": "41.10.3",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
-    "happy-dom": "^20.13.2",
+    "happy-dom": "^21.0.4",
     "lucide-react": "^1.39.0",
     "node-addon-api": "^8.9.2",
     "node-gyp": "^12.2.0",
