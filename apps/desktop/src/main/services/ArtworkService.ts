@@ -40,7 +40,14 @@ const ARTWORK_MAX_WIDTH = 640;
 const ARTWORK_NOT_FOUND_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Minimum delay between API requests in milliseconds. */
-const RATE_LIMIT_DELAY_MS = 1100;
+export const RATE_LIMIT_DELAY_MS = 1100;
+
+/**
+ * Maximum artwork image downloads in flight during a batch sync. Downloads
+ * overlap the next game's rate-limited API query; the bound keeps a slow CDN
+ * from piling up unbounded work.
+ */
+export const MAX_CONCURRENT_DOWNLOADS = 2;
 
 /** Backoff delay after a rate limit (429) response. */
 const RATE_LIMIT_BACKOFF_MS = 10_000;
@@ -323,6 +330,20 @@ export class ArtworkService extends EventEmitter {
       return true;
     }
 
+    const gameInfo = await this.queryGame(game);
+    if (!gameInfo) {
+      return false;
+    }
+    return this.applyGameInfo(game, gameInfo);
+  }
+
+  /**
+   * API step of the pipeline: look the game up on ScreenScraper by hash, then
+   * by name. Rate-limited via waitForRateLimit(). Returns null (and marks the
+   * game artworkNotFound) when neither lookup matches.
+   * Throws ScreenScraperError with errorCode 'auth-failed' if credentials are invalid.
+   */
+  private async queryGame(game: Game): Promise<ScreenScraperGameInfo | null> {
     const client = this.createClient();
 
     // MD5 is pre-computed at scan time and stored in game.romHashes
@@ -364,18 +385,32 @@ export class ArtworkService extends EventEmitter {
       // Mark this game so we don't re-query the API on the next startup sync
       const notFoundUpdate: Partial<Game> = { artworkNotFound: Date.now() };
       if (this.syncing) {
-        this.libraryService.updateGameBatched(gameId, notFoundUpdate);
+        this.libraryService.updateGameBatched(game.id, notFoundUpdate);
       } else {
-        await this.libraryService.updateGame(gameId, notFoundUpdate);
+        await this.libraryService.updateGame(game.id, notFoundUpdate);
       }
-      return false;
     }
+
+    return gameInfo;
+  }
+
+  /**
+   * Download step of the pipeline: fetch the cover art for a matched game and
+   * persist it along with the metadata. Makes no API requests, so a batch sync
+   * runs it concurrently with the next game's rate-limited query.
+   * Returns true if artwork was downloaded. If the download fails, the metadata
+   * is still saved (without the not-found marker, so the next sync retries the
+   * image) and the download error is rethrown.
+   */
+  private async applyGameInfo(game: Game, gameInfo: ScreenScraperGameInfo): Promise<boolean> {
+    const gameId = game.id;
 
     // Step 4: Download artwork
     const artworkUrl =
       gameInfo.media.boxArt2d ?? gameInfo.media.boxArt3d ?? gameInfo.media.screenshot;
     let coverArtPath: string | undefined;
     let coverArtAspectRatio: number | undefined;
+    let downloadError: unknown;
     if (artworkUrl) {
       try {
         const extension = this.getImageExtension(artworkUrl);
@@ -390,7 +425,8 @@ export class ArtworkService extends EventEmitter {
           coverArtAspectRatio = Math.max(0.4, Math.min(1.8, rawRatio));
         }
       } catch (error) {
-        // Download failed — log but still save metadata
+        // Download failed — log, still save metadata below, then rethrow
+        downloadError = error;
         artworkLog.error(
           `Artwork download failed for ${game.title}:`,
           error instanceof Error ? error.message : error,
@@ -421,13 +457,18 @@ export class ArtworkService extends EventEmitter {
       }
     }
 
-    const updates: Partial<typeof game> = {
-      ...(hasArtwork
-        ? {
-            coverArt: `artwork://${gameId}${this.getImageExtension(artworkUrl)}`,
-            artworkNotFound: undefined, // Clear any previous not-found marker
-          }
-        : { artworkNotFound: Date.now() }),
+    // A failed download is transient: leave artworkNotFound alone so the next sync retries
+    const artworkUpdates: Partial<Game> = hasArtwork
+      ? {
+          coverArt: `artwork://${gameId}${this.getImageExtension(artworkUrl)}`,
+          artworkNotFound: undefined, // Clear any previous not-found marker
+        }
+      : downloadError === undefined
+        ? { artworkNotFound: Date.now() }
+        : {};
+
+    const updates: Partial<Game> = {
+      ...artworkUpdates,
       ...(coverArtAspectRatio !== undefined ? { coverArtAspectRatio } : {}),
       ...(regionalName ? { system: regionalName } : {}),
       ...(gameInfo.romRegions ? { romRegions: gameInfo.romRegions } : {}),
@@ -450,12 +491,16 @@ export class ArtworkService extends EventEmitter {
       await this.libraryService.updateGame(gameId, updates);
     }
 
-    return !!coverArtPath;
+    if (downloadError !== undefined) {
+      throw downloadError;
+    }
+    return hasArtwork;
   }
 
   /**
    * Sync artwork for all games that don't have cover art yet.
-   * Processes games serially with rate limiting. Cancellable via cancelSync().
+   * Queries games one at a time with rate limiting, overlapping image downloads
+   * with the next query. Cancellable via cancelSync().
    */
   async syncAllGames(): Promise<ArtworkSyncStatus> {
     if (this.syncing) {
@@ -629,7 +674,13 @@ export class ArtworkService extends EventEmitter {
 
   /**
    * Internal batch sync implementation shared by syncAllGames() and syncGames().
-   * Processes game IDs serially with rate limiting, progress emission, and cancellation.
+   *
+   * Pipelined: API queries run strictly one at a time (rate-limited, in batch
+   * order), while each matched game's image download runs in the background so
+   * it overlaps the next game's rate-limit wait and query. At most
+   * MAX_CONCURRENT_DOWNLOADS downloads are in flight. A game's terminal progress
+   * event (done / not-found / error) is emitted only once its own download settles.
+   * Cancellation stops new queries; downloads already in flight still settle.
    */
   private async runSyncBatch(gameIds: Array<string>): Promise<ArtworkSyncStatus> {
     const total = gameIds.length;
@@ -637,8 +688,63 @@ export class ArtworkService extends EventEmitter {
     let found = 0;
     let notFound = 0;
     let errors = 0;
+    let processedAtLastFlush = 0;
+    const downloads = new Set<Promise<void>>();
 
-    for (const gameId of gameIds) {
+    const finishGame = (
+      game: Game,
+      current: number,
+      outcome: { found: boolean } | { error: unknown },
+    ): void => {
+      processed++;
+
+      if ("error" in outcome) {
+        errors++;
+        const { error } = outcome;
+        this.emitProgress({
+          gameId: game.id,
+          gameTitle: game.title,
+          phase: "error",
+          current,
+          total,
+          error: error instanceof Error ? error.message : String(error),
+          errorCode:
+            error instanceof ScreenScraperError ? (error.errorCode as ArtworkErrorCode) : undefined,
+        });
+      } else if (outcome.found) {
+        found++;
+        // Re-fetch the game to get the coverArt URL that applyGameInfo() just set
+        const updatedGame = this.libraryService.getGame(game.id);
+        this.emitProgress({
+          gameId: game.id,
+          gameTitle: game.title,
+          phase: "done",
+          current,
+          total,
+          coverArt: updatedGame?.coverArt,
+          coverArtAspectRatio: updatedGame?.coverArtAspectRatio,
+        });
+      } else {
+        notFound++;
+        this.emitProgress({
+          gameId: game.id,
+          gameTitle: game.title,
+          phase: "not-found",
+          current,
+          total,
+        });
+      }
+    };
+
+    for (const [index, gameId] of gameIds.entries()) {
+      // Flush batched saves to disk every 10 games to bound data loss on crash.
+      // During gameplay, defer flushing to avoid any event loop pressure —
+      // the in-memory state is already updated and flushes when gameplay ends.
+      if (processed - processedAtLastFlush >= 10 && !this.gameplayActive) {
+        processedAtLastFlush = processed;
+        await this.libraryService.flushSave();
+      }
+
       if (this.cancelled) {
         break;
       }
@@ -649,79 +755,62 @@ export class ArtworkService extends EventEmitter {
         continue;
       }
 
+      const current = index + 1;
       this.emitProgress({
         gameId: game.id,
         gameTitle: game.title,
         phase: "hashing",
-        current: processed + 1,
+        current,
+        total,
+      });
+      this.emitProgress({
+        gameId: game.id,
+        gameTitle: game.title,
+        phase: "querying",
+        current,
         total,
       });
 
+      // Covered since the batch was assembled (e.g. a manual single-game sync)
+      if (game.coverArt) {
+        finishGame(game, current, { found: true });
+        continue;
+      }
+
+      let gameInfo: ScreenScraperGameInfo | null;
       try {
-        this.emitProgress({
-          gameId: game.id,
-          gameTitle: game.title,
-          phase: "querying",
-          current: processed + 1,
-          total,
-        });
-
-        const success = await this.syncGame(game.id);
-
-        if (success) {
-          found++;
-          // Re-fetch the game to get the coverArt URL that syncGame() just set
-          const updatedGame = this.libraryService.getGame(game.id);
-          this.emitProgress({
-            gameId: game.id,
-            gameTitle: game.title,
-            phase: "done",
-            current: processed + 1,
-            total,
-            coverArt: updatedGame?.coverArt,
-            coverArtAspectRatio: updatedGame?.coverArtAspectRatio,
-          });
-        } else {
-          notFound++;
-          this.emitProgress({
-            gameId: game.id,
-            gameTitle: game.title,
-            phase: "not-found",
-            current: processed + 1,
-            total,
-          });
-        }
+        gameInfo = await this.queryGame(game);
       } catch (error) {
-        errors++;
-
-        const errorCode: ArtworkErrorCode | undefined =
-          error instanceof ScreenScraperError ? (error.errorCode as ArtworkErrorCode) : undefined;
-
-        this.emitProgress({
-          gameId: game.id,
-          gameTitle: game.title,
-          phase: "error",
-          current: processed + 1,
-          total,
-          error: error instanceof Error ? error.message : String(error),
-          errorCode,
-        });
-
+        finishGame(game, current, { error });
+        const errorCode = error instanceof ScreenScraperError ? error.errorCode : undefined;
         // Auth and config failures should stop the entire batch — no point continuing
         if (errorCode === "auth-failed" || errorCode === "config-error") {
           break;
         }
+        continue;
       }
 
-      processed++;
-
-      // Flush batched saves to disk every 10 games to bound data loss on crash.
-      // During gameplay, defer flushing to avoid any event loop pressure —
-      // the in-memory state is already updated and flushes when gameplay ends.
-      if (processed % 10 === 0 && !this.gameplayActive) {
-        await this.libraryService.flushSave();
+      if (!gameInfo) {
+        finishGame(game, current, { found: false });
+        continue;
       }
+
+      // Wait for a download slot, then let the download run while the loop
+      // moves on to the next game's rate-limited query.
+      while (downloads.size >= MAX_CONCURRENT_DOWNLOADS) {
+        await Promise.race(downloads);
+      }
+      const download: Promise<void> = this.applyGameInfo(game, gameInfo)
+        .then(
+          (hasArtwork) => finishGame(game, current, { found: hasArtwork }),
+          (error: unknown) => finishGame(game, current, { error }),
+        )
+        .finally(() => downloads.delete(download));
+      downloads.add(download);
     }
+
+    // Let in-flight downloads settle (also after cancel or an auth failure)
+    await Promise.all(downloads);
 
     // Final flush for any remaining batched updates
     await this.libraryService.flushSave();
