@@ -1,13 +1,14 @@
 name: Turbo cache check
 description: >-
-  Report whether every given turbo task is already in the remote cache. Turbo
-  hashes from the lockfile and git-tracked sources, so this runs before
-  `pnpm install`; when everything hits, the job can skip install entirely and
-  let turbo replay the cached logs and outputs.
+  Put the lockfile's turbo on PATH, then report whether every given turbo task
+  is already in the remote cache. Turbo hashes from the lockfile and
+  git-tracked sources, so this runs before `pnpm install`; when everything
+  hits, the job can skip install entirely and let turbo replay the cached logs
+  and outputs.
 
 inputs:
   tasks:
-    description: Space-separated turbo tasks the job will run.
+    description: Space-separated turbo tasks (and flags) the job will run.
     required: true
 
 outputs:
@@ -18,16 +19,47 @@ outputs:
 runs:
   using: composite
   steps:
+    # Fetch the platform binary straight from the registry (~0.3s, vs ~1.8s
+    # for `npx turbo`) and verify it against the lockfile's integrity hash,
+    # the same check pnpm would make.
+    - name: Install turbo
+      shell: bash
+      run: |
+        version=$(sed -nE 's/^  turbo@([0-9][0-9.]*):$/\1/p' pnpm-lock.yaml | head -n 1)
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64) platform=linux-64 ;;
+          Linux-ARM64) platform=linux-arm64 ;;
+          macOS-X64) platform=darwin-64 ;;
+          macOS-ARM64) platform=darwin-arm64 ;;
+          *) echo "::error::No turbo binary for $RUNNER_OS-$RUNNER_ARCH"; exit 1 ;;
+        esac
+        integrity=$(grep -A1 -F "  '@turbo/$platform@$version':" pnpm-lock.yaml | sed -nE 's/.*integrity: sha512-([^}]+)\}.*/\1/p' | head -n 1)
+        if [[ -z "$version" || -z "$integrity" ]]; then
+          echo "::error::Could not find turbo $platform in pnpm-lock.yaml"
+          exit 1
+        fi
+
+        tgz="$RUNNER_TEMP/turbo.tgz"
+        curl -fsSL --retry 3 -o "$tgz" "https://registry.npmjs.org/@turbo/$platform/-/$platform-$version.tgz"
+        actual=$(openssl dgst -sha512 -binary "$tgz" | base64 | tr -d '\n')
+        if [[ "$actual" != "$integrity" ]]; then
+          echo "::error::turbo $platform@$version failed the lockfile integrity check"
+          exit 1
+        fi
+
+        dir="$RUNNER_TEMP/turbo"
+        mkdir -p "$dir/bin"
+        tar -xzf "$tgz" -C "$dir"
+        mv "$dir"/*/bin/turbo "$dir/bin/turbo"
+        echo "$dir/bin" >> "$GITHUB_PATH"
+        "$dir/bin/turbo" --version
+
     - name: Check turbo cache
       id: check
       shell: bash
       env:
         TASKS: ${{ inputs.tasks }}
       run: |
-        # Pin to the lockfile's turbo so hashing matches the installed CLI.
-        version=$(sed -nE 's/^  turbo@([0-9][0-9.]*):$/\1/p' pnpm-lock.yaml | head -n 1)
-        echo "TURBO_VERSION=$version" >> "$GITHUB_ENV"
-
         if [[ -z "${TURBO_TOKEN:-}" || -z "${TURBO_TEAM:-}" ]]; then
           echo "Remote cache not configured; running tasks normally."
           echo "all-cached=false" >> "$GITHUB_OUTPUT"
@@ -36,7 +68,7 @@ runs:
 
         dry="$RUNNER_TEMP/turbo-dry.json"
         # shellcheck disable=SC2086 # TASKS is intentionally word-split
-        if ! npx -y "turbo@$version" run $TASKS --dry=json > "$dry"; then
+        if ! turbo run $TASKS --dry=json > "$dry"; then
           echo "Dry run failed; running tasks normally."
           echo "all-cached=false" >> "$GITHUB_OUTPUT"
           exit 0
