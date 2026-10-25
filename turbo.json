@@ -33,6 +33,12 @@
     "test": {
       "dependsOn": ["transit"]
     },
+    "test:unit": {
+      "dependsOn": ["transit"]
+    },
+    "test:stories": {
+      "dependsOn": ["transit"]
+    },
     "typecheck": {
       "dependsOn": ["transit"]
     },
