@@ -10,7 +10,7 @@ gh issue create --title "Parent title" --body "- [ ] #101\n- [ ] #102\n- [ ] #10
 
 # 2. Get node IDs
 gh api graphql -f query='{
-  repository(owner: "ryanmagoon", name: "gamelord") {
+  repository(owner: "magoon-labs", name: "gamelord") {
     parent: issue(number: 104) { id }
     child: issue(number: 101) { id }
   }

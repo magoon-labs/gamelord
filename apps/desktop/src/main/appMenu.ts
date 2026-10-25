@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, shell } from "electron";
 
-const GITHUB_REPO_URL = "https://github.com/ryanmagoon/gamelord";
+const GITHUB_REPO_URL = "https://github.com/magoon-labs/gamelord";
 
 /**
  * Builds and sets the application menu. Call once after the main window is created.

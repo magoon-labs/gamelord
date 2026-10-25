@@ -132,7 +132,7 @@ describe("setupAppMenu", () => {
       const issues = findItem(submenu(), (i) => i.label === "Report an Issue...");
       clickItem(issues);
       expect(mockOpenExternal).toHaveBeenCalledWith(
-        "https://github.com/ryanmagoon/gamelord/issues",
+        "https://github.com/magoon-labs/gamelord/issues",
       );
     });
 
@@ -140,7 +140,7 @@ describe("setupAppMenu", () => {
       const docs = findItem(submenu(), (i) => i.label === "Documentation");
       clickItem(docs);
       expect(mockOpenExternal).toHaveBeenCalledWith(
-        "https://github.com/ryanmagoon/gamelord#readme",
+        "https://github.com/magoon-labs/gamelord#readme",
       );
     });
   });

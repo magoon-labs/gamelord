@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues at [ryanmagoon/gamelord](https://github.com/ryanmagoon/gamelord). Use the `gh` CLI for all operations.
+Issues and PRDs for this repo live as GitHub issues at [magoon-labs/gamelord](https://github.com/magoon-labs/gamelord). Use the `gh` CLI for all operations.
 
 ## Conventions
 

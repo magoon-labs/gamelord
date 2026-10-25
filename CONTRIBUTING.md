@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-git clone https://github.com/ryanmagoon/gamelord.git
+git clone https://github.com/magoon-labs/gamelord.git
 cd gamelord
 pnpm install
 cd apps/desktop/native && npx node-gyp rebuild && cd ../../..

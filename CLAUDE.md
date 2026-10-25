@@ -23,7 +23,7 @@ This repo uses the engineering skills from [mattpocock/skills](https://github.co
 
 ### Issue tracker
 
-GitHub Issues at [ryanmagoon/gamelord](https://github.com/ryanmagoon/gamelord). See [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md).
+GitHub Issues at [magoon-labs/gamelord](https://github.com/magoon-labs/gamelord). See [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md).
 
 ### Triage labels
 
