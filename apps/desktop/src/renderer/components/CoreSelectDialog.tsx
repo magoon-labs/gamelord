@@ -91,6 +91,7 @@ export const CoreSelectDialog: React.FC<CoreSelectDialogProps> = ({
           ) : (
             cores.map((core) => (
               <button
+                type="button"
                 className="flex items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
                 key={core.name}
                 onClick={() => onSelect(core.name, remember)}

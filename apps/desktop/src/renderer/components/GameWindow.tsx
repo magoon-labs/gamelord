@@ -1292,6 +1292,7 @@ export const GameWindow: React.FC = () => {
               style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             >
               <button
+                type="button"
                 onClick={() => api.gameWindow.minimize()}
                 className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
                 title="Minimize"
@@ -1299,6 +1300,7 @@ export const GameWindow: React.FC = () => {
                 <Minus className="h-4 w-4" />
               </button>
               <button
+                type="button"
                 onClick={() => api.gameWindow.maximize()}
                 className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
                 title="Maximize"
@@ -1306,6 +1308,7 @@ export const GameWindow: React.FC = () => {
                 <Square className="h-3.5 w-3.5" />
               </button>
               <button
+                type="button"
                 onClick={() => api.gameWindow.close()}
                 className="p-1.5 text-gray-400 hover:text-white hover:bg-red-500/80 rounded transition-colors"
                 title="Close"
@@ -1371,6 +1374,7 @@ export const GameWindow: React.FC = () => {
                 )}
               </Button>
               <button
+                type="button"
                 onClick={() => {
                   setShowSpeedMenu((v) => {
                     playSfx(v ? "menuClose" : "menuOpen");
@@ -1388,6 +1392,7 @@ export const GameWindow: React.FC = () => {
                 <div className="absolute bottom-full left-0 mb-2 bg-black/95 rounded-lg shadow-lg py-1 min-w-[100px]">
                   {SPEED_OPTIONS.map((speed) => (
                     <button
+                      type="button"
                       key={speed}
                       onClick={() => {
                         playSfx("click");
@@ -1416,6 +1421,7 @@ export const GameWindow: React.FC = () => {
                 <div className="flex gap-1">
                   {[0, 1, 2, 3, 4].map((slot) => (
                     <button
+                      type="button"
                       key={slot}
                       onClick={() => {
                         playSfx("click");
@@ -1508,6 +1514,7 @@ export const GameWindow: React.FC = () => {
                 <div className="absolute bottom-full right-0 mb-2 bg-black/95 rounded-lg shadow-lg py-1 min-w-[160px]">
                   {SHADER_PRESETS.map((preset) => (
                     <button
+                      type="button"
                       key={preset}
                       onClick={() => {
                         playSfx("click");
@@ -1554,6 +1561,7 @@ export const GameWindow: React.FC = () => {
               {showSettingsMenu && (
                 <div className="absolute bottom-full right-0 mb-2 bg-black/95 rounded-lg shadow-lg py-1 min-w-[160px]">
                   <button
+                    type="button"
                     onClick={() => {
                       playSfx("click");
                       setShowControlsOverlay(true);
@@ -1566,6 +1574,7 @@ export const GameWindow: React.FC = () => {
                     <span className="ml-auto text-xs text-white/30">?</span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       playSfx("click");
                       setShowSettingsMenu(false);
@@ -1578,6 +1587,7 @@ export const GameWindow: React.FC = () => {
                   </button>
                   {discTotal > 1 && (
                     <button
+                      type="button"
                       onClick={() => {
                         playSfx("click");
                         setShowSettingsMenu(false);
@@ -1605,6 +1615,7 @@ export const GameWindow: React.FC = () => {
                   )}
                   <div className="border-t border-white/10 my-1" />
                   <button
+                    type="button"
                     onClick={() => {
                       playSfx(showFps ? "toggleOff" : "toggleOn");
                       setShowFps((v) => !v);
@@ -1619,6 +1630,7 @@ export const GameWindow: React.FC = () => {
                     </span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       const next = !hdrEnabled;
                       playSfx(next ? "toggleOn" : "toggleOff");
@@ -1652,6 +1664,7 @@ export const GameWindow: React.FC = () => {
                     </span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       playSfx(sfxPreferences.enabled ? "toggleOff" : "toggleOn");
                       setSfxEnabled(!sfxPreferences.enabled);
@@ -1681,6 +1694,7 @@ export const GameWindow: React.FC = () => {
                   )}
                   {process.env.NODE_ENV === "development" && (
                     <button
+                      type="button"
                       onClick={() => setShowAgentation((v) => !v)}
                       className="w-full flex items-center justify-between px-4 py-2 text-sm text-white/80 hover:bg-white/10 transition-colors"
                     >
@@ -1797,6 +1811,7 @@ export const GameWindow: React.FC = () => {
           }`}
         >
           <button
+            type="button"
             onClick={() => {
               dismissControlsHint();
               setShowControlsOverlay(true);

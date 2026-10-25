@@ -201,6 +201,7 @@ export const CheatPanel: React.FC<CheatPanelProps> = ({
             <p className="text-xs text-white/40 mt-0.5">Cheat Codes</p>
           </div>
           <button
+            type="button"
             className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
             onClick={onClose}
             aria-label="Close"
@@ -240,6 +241,7 @@ export const CheatPanel: React.FC<CheatPanelProps> = ({
               <p className="text-sm text-white/40">Cheat database not downloaded yet.</p>
               {onDownloadDatabase && (
                 <button
+                  type="button"
                   onClick={onDownloadDatabase}
                   className="mt-3 px-4 py-1.5 bg-white/10 hover:bg-white/15 text-white text-xs font-medium rounded-lg transition-colors"
                 >
@@ -253,6 +255,7 @@ export const CheatPanel: React.FC<CheatPanelProps> = ({
               <p className="text-sm text-red-400/80">Failed to download cheat database.</p>
               {onDownloadDatabase && (
                 <button
+                  type="button"
                   onClick={onDownloadDatabase}
                   className="mt-3 px-4 py-1.5 bg-white/10 hover:bg-white/15 text-white text-xs font-medium rounded-lg transition-colors"
                 >
@@ -332,6 +335,7 @@ export const CheatPanel: React.FC<CheatPanelProps> = ({
               />
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={handleAddCheat}
                   disabled={!newCode.trim()}
                   className="flex-1 bg-white/10 hover:bg-white/15 disabled:opacity-30 disabled:hover:bg-white/10 text-white text-xs font-medium rounded-lg py-1.5 transition-colors"
@@ -339,6 +343,7 @@ export const CheatPanel: React.FC<CheatPanelProps> = ({
                   Add
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShowAddForm(false)}
                   className="px-3 text-white/40 hover:text-white text-xs rounded-lg py-1.5 transition-colors"
                 >
@@ -348,6 +353,7 @@ export const CheatPanel: React.FC<CheatPanelProps> = ({
             </div>
           ) : (
             <button
+              type="button"
               onClick={() => setShowAddForm(true)}
               className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white transition-colors"
             >
@@ -383,6 +389,7 @@ const CheatRow: React.FC<CheatRowProps> = ({ description, code, enabled, onToggl
 
       {onRemove && (
         <button
+          type="button"
           onClick={onRemove}
           className="p-1 rounded text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
           aria-label={`Remove ${description}`}

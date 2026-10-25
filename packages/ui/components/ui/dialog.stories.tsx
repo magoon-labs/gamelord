@@ -93,6 +93,7 @@ export const Wide: Story = {
             </DialogTitle>
             {["General", "Emulation", "Library", "About"].map((tab) => (
               <button
+                type="button"
                 key={tab}
                 className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-left text-muted-foreground hover:bg-accent/50 hover:text-foreground first:bg-accent first:text-accent-foreground first:font-medium"
               >

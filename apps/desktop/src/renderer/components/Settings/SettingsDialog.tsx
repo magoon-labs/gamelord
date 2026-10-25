@@ -83,6 +83,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             </DialogTitle>
             {TAB_CONFIG.map((tab) => (
               <button
+                type="button"
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
                 className={cn(
@@ -141,6 +142,7 @@ const Toggle: React.FC<{
   "aria-label"?: string;
 }> = ({ checked, onChange, ...props }) => (
   <button
+    type="button"
     role="switch"
     aria-checked={checked}
     onClick={() => onChange(!checked)}

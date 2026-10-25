@@ -1085,7 +1085,7 @@ describe("ArtworkService", () => {
 
     it("flushes deferred writes when gameplay ends", async () => {
       const lib = createMockLibraryService([]);
-      const service = new ArtworkService(lib);
+      const _service = new ArtworkService(lib);
       await flushPromises();
 
       // Simulate: sync is running and gameplay was active

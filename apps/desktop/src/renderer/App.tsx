@@ -496,19 +496,20 @@ function App() {
     (game: UiGame): Array<GameCardMenuItem> => {
       const items: Array<GameCardMenuItem> = [];
 
-      items.push({
-        label: game.favorite ? "Unfavorite" : "Favorite",
-        icon: <Heart className={cn("h-4 w-4", game.favorite && "fill-current")} />,
-        onClick: () => {
-          api.library.updateGame(game.id, { favorite: !game.favorite });
+      items.push(
+        {
+          label: game.favorite ? "Unfavorite" : "Favorite",
+          icon: <Heart className={cn("h-4 w-4", game.favorite && "fill-current")} />,
+          onClick: () => {
+            api.library.updateGame(game.id, { favorite: !game.favorite });
+          },
         },
-      });
-
-      items.push({
-        label: "Change Core",
-        icon: <Cpu className="h-4 w-4" />,
-        onClick: () => void handleChangeCore(game),
-      });
+        {
+          label: "Change Core",
+          icon: <Cpu className="h-4 w-4" />,
+          onClick: () => void handleChangeCore(game),
+        },
+      );
 
       if (!game.coverArt) {
         items.push({
