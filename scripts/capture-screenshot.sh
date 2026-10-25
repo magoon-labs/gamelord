@@ -8,7 +8,8 @@
 # Prerequisites:
 #   - The Electron app must be running with CDP enabled:
 #       cd apps/desktop && pnpm dev
-#   - playwright must be installed (it's a dev dependency of this project)
+#   - playwright must be installed (it's a dev dependency of packages/ui;
+#     resolved from there, so the script works from any directory)
 #
 # Output: saves a JPEG screenshot (quality 80) and prints the path to stdout.
 # JPEG keeps file size under GitHub's camo proxy limit (~5MB).
@@ -16,6 +17,7 @@
 set -euo pipefail
 
 OUTPUT_PATH="/tmp/gamelord-screenshot.jpg"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CDP_PORT="${CDP_PORT:-9222}"
 
 while [ $# -gt 0 ]; do
@@ -40,12 +42,14 @@ fi
 
 # Use playwright to connect and screenshot.
 # Playwright supports JPEG output natively when the path ends in .jpg/.jpeg.
-# For .png paths, we capture as PNG then convert via sips (macOS built-in).
-node -e "
-const { chromium } = require('playwright');
+# playwright is only installed in packages/ui (not hoisted to the root), so
+# resolve it from there rather than from the current directory. Values are
+# passed via env vars so paths containing quotes can't break the script.
+PLAYWRIGHT_FROM="${REPO_ROOT}/packages/ui" CDP_PORT="$CDP_PORT" OUTPUT_PATH="$OUTPUT_PATH" node -e "
+const { chromium } = require(require.resolve('playwright', { paths: [process.env.PLAYWRIGHT_FROM] }));
 
 (async () => {
-  const browser = await chromium.connectOverCDP('http://127.0.0.1:${CDP_PORT}');
+  const browser = await chromium.connectOverCDP('http://127.0.0.1:' + process.env.CDP_PORT);
   const pages = browser.contexts().flatMap(c => c.pages());
 
   // Prefer the library window (index.html / port 5173), fall back to first page
@@ -56,7 +60,7 @@ const { chromium } = require('playwright');
     process.exit(1);
   }
 
-  const outPath = '${OUTPUT_PATH}';
+  const outPath = process.env.OUTPUT_PATH;
   const isJpeg = outPath.endsWith('.jpg') || outPath.endsWith('.jpeg');
 
   await page.screenshot({
