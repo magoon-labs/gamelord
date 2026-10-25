@@ -6,7 +6,7 @@
 #   pathname    Optional remote path (default: screenshots/<timestamp>-<filename>)
 #
 # Requires:
-#   - vercel CLI installed (brew install vercel or pnpm add -g vercel)
+#   - vercel CLI installed (npm i -g vercel); tested with v65
 #   - BLOB_READ_WRITE_TOKEN env var (from Vercel dashboard → Storage → Blob)
 #
 # Output: prints the public URL to stdout on success.
@@ -32,7 +32,7 @@ if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
 fi
 
 if ! command -v vercel &>/dev/null; then
-  echo "Error: vercel CLI not found. Install with: pnpm add -g vercel" >&2
+  echo "Error: vercel CLI not found. Install with: npm i -g vercel" >&2
   exit 1
 fi
 
@@ -60,12 +60,13 @@ else
   PATHNAME="screenshots/${TIMESTAMP}-${FILENAME}"
 fi
 
-# Upload to Vercel Blob (store access level is set at creation time in the dashboard).
-# --force allows overwriting if pathname already exists.
+# Upload to Vercel Blob. --access must match the store's access level (public).
+# --allow-overwrite allows overwriting if pathname already exists.
 # BLOB_READ_WRITE_TOKEN is read automatically from the environment.
 OUTPUT=$(vercel blob put "$IMAGE_PATH" \
   --pathname "$PATHNAME" \
-  --force \
+  --access public \
+  --allow-overwrite \
   --no-color 2>&1)
 
 # Extract URL from output — vercel blob put prints "Success! <url>"
