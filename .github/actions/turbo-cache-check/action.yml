@@ -49,4 +49,11 @@ runs:
         echo "all-cached=$all" >> "$GITHUB_OUTPUT"
         if [[ "$all" == "true" ]]; then
           echo "Every task is cached; skipping dependency install."
+          # turbo resolves the package manager binary even when it only
+          # replays cache hits. corepack's shim satisfies that lookup without
+          # downloading pnpm; it is never executed on a hit.
+          shims="$RUNNER_TEMP/corepack-shims"
+          mkdir -p "$shims"
+          corepack enable --install-directory "$shims" pnpm
+          echo "$shims" >> "$GITHUB_PATH"
         fi
