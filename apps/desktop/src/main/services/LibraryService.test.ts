@@ -51,37 +51,7 @@ import type { GameSystem, Game } from "../../types/library";
  */
 async function createService(): Promise<LibraryService> {
   const service = new LibraryService();
-  // The constructor fires loadConfig() and loadLibrary() without awaiting them.
-  // loadConfig triggers a chain of async operations (backfill, repair, migrate,
-  // scaffold), each calling saveConfig(). We must wait for the entire chain.
-  //
-  // Poll until the config file on disk stops changing — this signals the last
-  // saveConfig() in the chain has completed.
-  let lastMtime = 0;
-  let stableCount = 0;
-  await vi.waitFor(
-    () => {
-      const configPath = path.join(USER_DATA_DIR, "library-config.json");
-      if (!fs.existsSync(configPath)) {
-        throw new Error("Config file not yet written to disk");
-      }
-      const mtime = fs.statSync(configPath).mtimeMs;
-      if (mtime !== lastMtime) {
-        lastMtime = mtime;
-        stableCount = 0;
-        throw new Error("Config file still being written");
-      }
-      stableCount++;
-      // Require 5 consecutive stable polls (~100ms) to confirm no more writes.
-      // The init chain runs multiple saveConfig() calls in sequence — each one
-      // does stringify + writeFile + rename, so they can land within the same
-      // mtime granularity window on some filesystems.
-      if (stableCount < 5) {
-        throw new Error("Waiting for config to stabilize");
-      }
-    },
-    { interval: 20, timeout: 5000 },
-  );
+  await service.whenInitialized();
   return service;
 }
 
@@ -1107,8 +1077,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games, null, 2));
 
       const service = await createService();
-      // Give time for async backfill to complete
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const loadedGames = service.getGames();
       expect(loadedGames).toHaveLength(1);
@@ -1139,7 +1107,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games, null, 2));
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const loadedGames = service.getGames();
       expect(loadedGames).toHaveLength(1);
@@ -1162,7 +1129,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games, null, 2));
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Game should be preserved — the ROM may be on an unmounted drive
       const loadedGames = service.getGames();
@@ -1189,7 +1155,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games, null, 2));
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const loadedGames = service.getGames();
       expect(loadedGames).toHaveLength(1);
@@ -1255,7 +1220,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), "{invalid json!!!}");
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const games = service.getGames();
       expect(games).toHaveLength(1);
@@ -1265,7 +1229,6 @@ describe("LibraryService", () => {
     it("starts fresh when both primary and backup are missing", async () => {
       // No library.json or library.json.bak exist (cleaned by beforeEach)
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(service.getGames()).toHaveLength(0);
     });
@@ -1488,8 +1451,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games, null, 2));
 
       const service = await createService();
-      // Give extra time for migration + backfill to complete
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const loadedGames = service.getGames();
       expect(loadedGames).toHaveLength(1);
@@ -1515,7 +1476,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games, null, 2));
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Game should be preserved with its old ID, not deleted
       const loadedGames = service.getGames();
@@ -1559,7 +1519,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games, null, 2));
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const loadedGames = service.getGames();
       expect(loadedGames).toHaveLength(2);
@@ -1598,7 +1557,6 @@ describe("LibraryService", () => {
       );
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const config = service.getConfig();
       const gbSystem = config.systems.find((s) => s.id === "gb");
@@ -1632,7 +1590,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games, null, 2));
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const loadedGames = service.getGames();
       expect(loadedGames).toHaveLength(1);
@@ -2348,7 +2305,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games));
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const loaded = service.getGames();
       expect(loaded[0].system).toBe("Super Famicom");
@@ -2377,7 +2333,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games));
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const loaded = service.getGames();
       expect(loaded[0].system).toBe("SNES");
@@ -2407,7 +2362,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games));
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const loaded = service.getGames();
       // Should remain "SNES" — romRegions already set, skip heuristic
@@ -2436,7 +2390,6 @@ describe("LibraryService", () => {
       fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games));
 
       const service = await createService();
-      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const loaded = service.getGames();
       // No metadata = not synced, should be untouched
