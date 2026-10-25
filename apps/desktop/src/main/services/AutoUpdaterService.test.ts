@@ -235,7 +235,7 @@ describe("AutoUpdaterService", () => {
       fakeAutoUpdater.emit(
         "error",
         new Error(
-          "Unable to find latest version on GitHub (https://github.com/ryanmagoon/gamelord/releases/latest), please ensure a production release exists: HttpError: 406",
+          "Unable to find latest version on GitHub (https://github.com/magoon-labs/gamelord/releases/latest), please ensure a production release exists: HttpError: 406",
         ),
       );
       expect(mockWebContentsSend).not.toHaveBeenCalled();

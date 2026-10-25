@@ -8,10 +8,10 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/stage-alpha-orange" alt="Alpha" />
-  <a href="https://github.com/ryanmagoon/gamelord/actions/workflows/ci.yml"><img src="https://github.com/ryanmagoon/gamelord/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://github.com/ryanmagoon/gamelord/releases?q=nightly&expanded=true"><img src="https://img.shields.io/badge/download-nightly-blue" alt="Nightly Build" /></a>
+  <a href="https://github.com/magoon-labs/gamelord/actions/workflows/ci.yml"><img src="https://github.com/magoon-labs/gamelord/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/magoon-labs/gamelord/releases?q=nightly&expanded=true"><img src="https://img.shields.io/badge/download-nightly-blue" alt="Nightly Build" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
-  <a href="https://github.com/ryanmagoon/gamelord/commits/main"><img src="https://img.shields.io/github/last-commit/ryanmagoon/gamelord/main" alt="Last Commit" /></a>
+  <a href="https://github.com/magoon-labs/gamelord/commits/main"><img src="https://img.shields.io/github/last-commit/magoon-labs/gamelord/main" alt="Last Commit" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey?logo=electron" alt="Platform" />
 </p>
 
@@ -63,7 +63,7 @@ More systems are on the way — the goal is to support any libretro-compatible c
 ### Setup
 
 ```bash
-git clone https://github.com/ryanmagoon/gamelord.git
+git clone https://github.com/magoon-labs/gamelord.git
 cd gamelord
 pnpm install
 
