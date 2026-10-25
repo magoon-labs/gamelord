@@ -63,6 +63,7 @@ export const CoreDownloadBanner: React.FC<CoreDownloadBannerProps> = ({
             Retry
           </Button>
           <button
+            type="button"
             onClick={onDismiss}
             className="text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Dismiss error"

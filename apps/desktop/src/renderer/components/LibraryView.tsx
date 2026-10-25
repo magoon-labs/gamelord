@@ -496,7 +496,7 @@ export const LibraryView: React.FC<{
     onScanLibrary: handleScanSystemFolders,
     onAddRomFolder: handleSelectDirectory,
     onOpenSettings: () => {
-      // TODO: open settings panel — https://github.com/ryanmagoon/gamelord/issues/96
+      // TODO: open settings panel — https://github.com/magoon-labs/gamelord/issues/96
       console.log("[menu] Preferences: settings panel not yet implemented");
     },
   });
@@ -871,6 +871,7 @@ export const LibraryView: React.FC<{
         >
           <span className="flex-1">{syncNotification.message}</span>
           <button
+            type="button"
             onClick={() => {
               playSfx("click");
               setSyncNotification(null);

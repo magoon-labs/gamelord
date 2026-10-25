@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
 
 // Mock electron before importing ArtworkService
 vi.mock("electron", () => ({
@@ -74,7 +74,7 @@ vi.mock("./ScreenScraperClient", async (importOriginal) => {
   };
 });
 
-import { ArtworkService } from "./ArtworkService";
+import { ArtworkService, MAX_CONCURRENT_DOWNLOADS, RATE_LIMIT_DELAY_MS } from "./ArtworkService";
 import { ScreenScraperError } from "./ScreenScraperClient";
 import { LibraryService } from "./LibraryService";
 import type { Game } from "../../types/library";
@@ -1085,7 +1085,7 @@ describe("ArtworkService", () => {
 
     it("flushes deferred writes when gameplay ends", async () => {
       const lib = createMockLibraryService([]);
-      const service = new ArtworkService(lib);
+      const _service = new ArtworkService(lib);
       await flushPromises();
 
       // Simulate: sync is running and gameplay was active
@@ -1194,6 +1194,214 @@ describe("ArtworkService", () => {
 
       expect(lib.updateGame).toHaveBeenCalled();
       expect(lib.updateGameBatched).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("pipelined batch sync", () => {
+    const DOWNLOAD_MS = 5000;
+
+    /** Timeline of API calls, download starts/ends and progress, stamped with fake time. */
+    let timeline: Array<{ event: string; gameId: string; at: number }>;
+
+    function foundInfo(gameId: string) {
+      return {
+        title: `Title ${gameId}`,
+        media: { boxArt2d: `https://screenscraper.fr/medias/${gameId}.png` },
+      };
+    }
+
+    /** md5 per game so the fake client can tell which game a request is for. */
+    function makeBatchGames(count: number): Array<Game> {
+      return Array.from({ length: count }, (_, i) =>
+        makeGame({
+          id: `game${i + 1}`,
+          title: `Game ${i + 1}`,
+          romHashes: { crc32: "", sha1: "", md5: `md5-game${i + 1}` },
+        }),
+      );
+    }
+
+    async function createSyncService(games: Array<Game>) {
+      const service = new ArtworkService(createMockLibraryService(games));
+      await flushPromises();
+      await service.setCredentials("user", "pass");
+      await flushPromises();
+      service.on("progress", (p: ArtworkProgress) => {
+        timeline.push({ event: p.phase, gameId: p.gameId, at: Date.now() });
+      });
+      return service;
+    }
+
+    /** Download fake that takes DOWNLOAD_MS of fake time; `fail` rejects instead. */
+    function stubSlowDownloads(service: ArtworkService, fail = new Set<string>()) {
+      return vi.spyOn(service, "downloadArtwork").mockImplementation((_url, filename) => {
+        const gameId = filename.replace(/\.png$/, "");
+        timeline.push({ event: "download-start", gameId, at: Date.now() });
+        return new Promise((resolve, reject) => {
+          setTimeout(() => {
+            timeline.push({ event: "download-end", gameId, at: Date.now() });
+            if (fail.has(gameId)) {
+              reject(new Error(`CDN exploded for ${gameId}`));
+            } else {
+              resolve(`/tmp/gamelord-test/artwork/${filename}`);
+            }
+          }, DOWNLOAD_MS);
+        });
+      });
+    }
+
+    function indexOf(event: string, gameId: string): number {
+      return timeline.findIndex((e) => e.event === event && e.gameId === gameId);
+    }
+
+    beforeEach(() => {
+      timeline = [];
+      // Use the real rate limiter and sleep, driven by fake timers
+      const proto = ArtworkService.prototype as unknown as Record<string, MockInstance>;
+      proto.sleep.mockRestore();
+      proto.waitForRateLimit.mockRestore();
+
+      mockFetchByHash.mockImplementation(async (md5: string) => {
+        const gameId = md5.replace("md5-", "");
+        timeline.push({ event: "api", gameId, at: Date.now() });
+        return foundInfo(gameId);
+      });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function runBatch(service: ArtworkService, gameIds: Array<string>) {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      const syncPromise = service.syncGames(gameIds);
+      await vi.runAllTimersAsync();
+      return syncPromise;
+    }
+
+    it("queries the next game while the previous game's download is still running", async () => {
+      const service = await createSyncService(makeBatchGames(3));
+      stubSlowDownloads(service);
+
+      const status = await runBatch(service, ["game1", "game2", "game3"]);
+
+      expect(indexOf("api", "game2")).toBeGreaterThan(-1);
+      expect(indexOf("api", "game2")).toBeLessThan(indexOf("download-end", "game1"));
+      expect(indexOf("api", "game3")).toBeLessThan(indexOf("download-end", "game2"));
+      expect(status).toMatchObject({ processed: 3, found: 3, notFound: 0, errors: 0 });
+    });
+
+    it("emits each game's done only after its own download settles, in per-game order", async () => {
+      const service = await createSyncService(makeBatchGames(3));
+      stubSlowDownloads(service);
+
+      await runBatch(service, ["game1", "game2", "game3"]);
+
+      for (const gameId of ["game1", "game2", "game3"]) {
+        const phases = timeline
+          .filter((e) => e.gameId === gameId && !["api", "download-start"].includes(e.event))
+          .map((e) => e.event);
+        expect(phases).toEqual(["hashing", "querying", "download-end", "done"]);
+      }
+    });
+
+    it("bounds concurrent downloads", async () => {
+      const service = await createSyncService(makeBatchGames(6));
+      let active = 0;
+      let maxActive = 0;
+      vi.spyOn(service, "downloadArtwork").mockImplementation((_url, filename) => {
+        active++;
+        maxActive = Math.max(maxActive, active);
+        return new Promise((resolve) => {
+          // Much slower than the rate limit so downloads would pile up if unbounded
+          setTimeout(() => {
+            active--;
+            resolve(`/tmp/gamelord-test/artwork/${filename}`);
+          }, 20_000);
+        });
+      });
+
+      const status = await runBatch(
+        service,
+        makeBatchGames(6).map((g) => g.id),
+      );
+
+      expect(maxActive).toBe(MAX_CONCURRENT_DOWNLOADS);
+      expect(status.found).toBe(6);
+    });
+
+    it("keeps consecutive API requests at least RATE_LIMIT_DELAY_MS apart, one at a time", async () => {
+      const service = await createSyncService(makeBatchGames(4));
+      stubSlowDownloads(service);
+
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const requestTimes: Array<number> = [];
+      const trackRequest = async <T>(result: T): Promise<T> => {
+        requestTimes.push(Date.now());
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        inFlight--;
+        return result;
+      };
+      // game2 misses by hash so it also exercises the rate-limited name fallback
+      mockFetchByHash.mockImplementation((md5: string) => {
+        const gameId = md5.replace("md5-", "");
+        return trackRequest(gameId === "game2" ? null : foundInfo(gameId));
+      });
+      mockFetchByName.mockImplementation(() => trackRequest(foundInfo("game2")));
+
+      const status = await runBatch(service, ["game1", "game2", "game3", "game4"]);
+
+      expect(requestTimes).toHaveLength(5);
+      for (let i = 1; i < requestTimes.length; i++) {
+        expect(requestTimes[i] - requestTimes[i - 1]).toBeGreaterThanOrEqual(RATE_LIMIT_DELAY_MS);
+      }
+      expect(maxInFlight).toBe(1);
+      expect(status.found).toBe(4);
+    });
+
+    it("reports a rejected download as an error for that game and finishes the rest", async () => {
+      const service = await createSyncService(makeBatchGames(3));
+      stubSlowDownloads(service, new Set(["game1"]));
+      const progress: Array<ArtworkProgress> = [];
+      service.on("progress", (p: ArtworkProgress) => progress.push(p));
+
+      const status = await runBatch(service, ["game1", "game2", "game3"]);
+
+      const terminal = (gameId: string) =>
+        progress.filter(
+          (p) => p.gameId === gameId && ["done", "not-found", "error"].includes(p.phase),
+        );
+      expect(terminal("game1")).toEqual([
+        expect.objectContaining({ phase: "error", error: "CDN exploded for game1", current: 1 }),
+      ]);
+      expect(terminal("game2")).toEqual([expect.objectContaining({ phase: "done", current: 2 })]);
+      expect(terminal("game3")).toEqual([expect.objectContaining({ phase: "done", current: 3 })]);
+      expect(status).toMatchObject({ processed: 3, found: 2, notFound: 0, errors: 1 });
+    });
+
+    it("stops querying on cancel, settles in-flight downloads, and emits nothing for unstarted games", async () => {
+      const service = await createSyncService(makeBatchGames(4));
+      stubSlowDownloads(service);
+      mockFetchByHash.mockImplementation(async (md5: string) => {
+        const gameId = md5.replace("md5-", "");
+        timeline.push({ event: "api", gameId, at: Date.now() });
+        if (gameId === "game2") {
+          service.cancelSync();
+        }
+        return foundInfo(gameId);
+      });
+
+      await runBatch(service, ["game1", "game2", "game3", "game4"]);
+
+      const touched = new Set(timeline.map((e) => e.gameId));
+      expect(touched).toEqual(new Set(["game1", "game2"]));
+      expect(mockFetchByHash).toHaveBeenCalledTimes(2);
+      // Games already started still finish once their downloads settle
+      expect(indexOf("done", "game1")).toBeGreaterThan(indexOf("download-end", "game1"));
+      expect(indexOf("done", "game2")).toBeGreaterThan(indexOf("download-end", "game2"));
     });
   });
 });

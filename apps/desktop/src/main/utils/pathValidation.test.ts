@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { validateCorePath, validateRomPath } from "./pathValidation";
+import { resolvePathWithinDir, validateCorePath, validateRomPath } from "./pathValidation";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -101,5 +101,62 @@ describe("validateRomPath", () => {
 
   it("rejects directories", () => {
     expect(() => validateRomPath(ROMS_DIR)).toThrow("ROM path is not a file");
+  });
+});
+
+describe("resolvePathWithinDir", () => {
+  const ARTWORK_DIR = path.join(TEST_DIR, "artwork");
+
+  it("resolves a plain filename inside the directory", () => {
+    expect(resolvePathWithinDir(ARTWORK_DIR, "abc.png")).toBe(path.join(ARTWORK_DIR, "abc.png"));
+  });
+
+  it("decodes percent-encoded characters in a valid filename", () => {
+    expect(resolvePathWithinDir(ARTWORK_DIR, "my%20game.png")).toBe(
+      path.join(ARTWORK_DIR, "my game.png"),
+    );
+  });
+
+  it("allows nested paths that stay inside the directory", () => {
+    expect(resolvePathWithinDir(ARTWORK_DIR, "sub/../abc.png")).toBe(
+      path.join(ARTWORK_DIR, "abc.png"),
+    );
+  });
+
+  it("allows filenames that merely start with two dots", () => {
+    expect(resolvePathWithinDir(ARTWORK_DIR, "..cover.png")).toBe(
+      path.join(ARTWORK_DIR, "..cover.png"),
+    );
+  });
+
+  it("rejects .. traversal out of the directory", () => {
+    expect(resolvePathWithinDir(ARTWORK_DIR, "../library.json")).toBeNull();
+  });
+
+  it("rejects percent-encoded .. traversal", () => {
+    expect(resolvePathWithinDir(ARTWORK_DIR, "%2e%2e/%2e%2e/%2e%2e/.ssh/id_ed25519")).toBeNull();
+    expect(resolvePathWithinDir(ARTWORK_DIR, "%2E%2E%2Flibrary.json")).toBeNull();
+  });
+
+  it("rejects absolute paths", () => {
+    expect(resolvePathWithinDir(ARTWORK_DIR, "/etc/passwd")).toBeNull();
+    expect(resolvePathWithinDir(ARTWORK_DIR, "%2Fetc%2Fpasswd")).toBeNull();
+  });
+
+  it("rejects sibling directories that share the directory's name as a prefix", () => {
+    expect(resolvePathWithinDir(ARTWORK_DIR, "../artwork-evil/abc.png")).toBeNull();
+  });
+
+  it("rejects the directory itself", () => {
+    expect(resolvePathWithinDir(ARTWORK_DIR, "")).toBeNull();
+    expect(resolvePathWithinDir(ARTWORK_DIR, ".")).toBeNull();
+  });
+
+  it("rejects malformed percent-encoding", () => {
+    expect(resolvePathWithinDir(ARTWORK_DIR, "%E0%A4%A.png")).toBeNull();
+  });
+
+  it("rejects null bytes", () => {
+    expect(resolvePathWithinDir(ARTWORK_DIR, "abc.png%00.txt")).toBeNull();
   });
 });

@@ -22,7 +22,7 @@ afterPack: build/afterPack.js
 
 publish:
   provider: github
-  owner: ryanmagoon
+  owner: magoon-labs
   repo: gamelord
 
 mac:

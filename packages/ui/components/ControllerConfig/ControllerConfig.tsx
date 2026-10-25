@@ -68,6 +68,7 @@ const ControllerCard: React.FC<{
 
   return (
     <button
+      type="button"
       onClick={onSelect}
       className={cn(
         "flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-left transition-all duration-150",
@@ -122,6 +123,7 @@ const BindingRow: React.FC<{
 
   return (
     <button
+      type="button"
       onClick={onStartRemap}
       className={cn(
         "flex items-center justify-between w-full py-2 px-3 rounded-md text-sm transition-all duration-150",

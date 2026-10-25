@@ -149,6 +149,7 @@ export const SystemDisambiguationDialog: React.FC<SystemDisambiguationDialogProp
         <div className="flex flex-col gap-2 py-2">
           {currentFile.matchingSystems.map((system) => (
             <button
+              type="button"
               className="flex items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
               key={system.id}
               onClick={() => handleSelect(system.id)}
@@ -161,6 +162,7 @@ export const SystemDisambiguationDialog: React.FC<SystemDisambiguationDialogProp
           ))}
 
           <button
+            type="button"
             className="flex items-center gap-3 rounded-lg border border-dashed p-3 text-left transition-colors hover:bg-muted text-muted-foreground"
             onClick={handleSkip}
           >

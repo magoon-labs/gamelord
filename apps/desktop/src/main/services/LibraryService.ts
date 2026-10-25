@@ -1157,7 +1157,7 @@ export class LibraryService extends EventEmitter {
       id: gameId,
       romHashes: hashes,
       romMtime: mtimeMs,
-      romPath: romPath,
+      romPath,
       system: system.name,
       systemId: system.id,
       title: this.cleanGameTitle(path.basename(romPath, ext)),

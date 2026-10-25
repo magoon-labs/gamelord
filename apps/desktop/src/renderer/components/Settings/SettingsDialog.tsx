@@ -83,6 +83,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             </DialogTitle>
             {TAB_CONFIG.map((tab) => (
               <button
+                type="button"
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
                 className={cn(
@@ -141,6 +142,7 @@ const Toggle: React.FC<{
   "aria-label"?: string;
 }> = ({ checked, onChange, ...props }) => (
   <button
+    type="button"
     role="switch"
     aria-checked={checked}
     onClick={() => onChange(!checked)}
@@ -676,7 +678,7 @@ const AboutTab: React.FC = () => {
         <SectionHeading>Links</SectionHeading>
         <div className="space-y-1">
           <a
-            href="https://github.com/ryanmagoon/gamelord"
+            href="https://github.com/magoon-labs/gamelord"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
@@ -685,7 +687,7 @@ const AboutTab: React.FC = () => {
             GitHub Repository
           </a>
           <a
-            href="https://github.com/ryanmagoon/gamelord/issues"
+            href="https://github.com/magoon-labs/gamelord/issues"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"

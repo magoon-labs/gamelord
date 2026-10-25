@@ -28,6 +28,42 @@ function validatePathWithinDirs(filePath: string, allowedDirs: Array<string>): s
 }
 
 /**
+ * Resolve an untrusted, possibly percent-encoded relative path (e.g. the path
+ * part of a custom protocol URL) against a base directory. Returns the
+ * absolute path, or null if it is malformed or would escape the directory.
+ *
+ * Decoding happens before the containment check so that encoded traversal
+ * like "%2e%2e/" cannot slip past it and be decoded later by a file:// fetch.
+ */
+export function resolvePathWithinDir(baseDir: string, untrustedPath: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(untrustedPath);
+  } catch {
+    return null;
+  }
+
+  if (decoded.includes("\0")) {
+    return null;
+  }
+
+  const resolvedDir = path.resolve(baseDir);
+  const resolved = path.resolve(resolvedDir, decoded);
+  const relative = path.relative(resolvedDir, resolved);
+
+  if (
+    relative === "" ||
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    return null;
+  }
+
+  return resolved;
+}
+
+/**
  * Validate a libretro core path. Ensures it:
  * - Is an absolute path
  * - Resolves within one of the allowed core directories
