@@ -1,5 +1,8 @@
 import * as Sentry from "@sentry/electron/main";
 import { app } from "electron";
+import { SENTRY_ENABLED_ARG } from "../types/sentry";
+
+let sentryEnabled = false;
 
 /**
  * Initialize Sentry crash reporting in the main process.
@@ -23,4 +26,14 @@ export function initSentryMain(): void {
     release: `gamelord@${app.getVersion()}`,
     environment: app.isPackaged ? "production" : "development",
   });
+  sentryEnabled = true;
+}
+
+/**
+ * Extra renderer command-line arguments that tell the preload whether the
+ * main-process SDK is running. Pass to `webPreferences.additionalArguments`
+ * on every BrowserWindow so renderers only start Sentry when main did.
+ */
+export function sentryRendererArguments(): Array<string> {
+  return sentryEnabled ? [SENTRY_ENABLED_ARG] : [];
 }

@@ -190,6 +190,9 @@ export interface GamelordAPI {
   // Platform info for conditional UI (e.g. window controls on non-macOS)
   platform: "darwin" | "win32" | "linux";
 
+  // Whether the main process initialized Sentry (renderer SDK is gated on it)
+  sentryEnabled: boolean;
+
   // Game input (native mode)
   gameInput: (port: number, id: number, pressed: boolean) => void;
   gameInputAnalog: (port: number, index: number, id: number, value: number) => void;

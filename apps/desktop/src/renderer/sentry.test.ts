@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 describe("initSentryRenderer", () => {
   let mockElectronInit: ReturnType<typeof vi.fn>;
@@ -22,6 +22,30 @@ describe("initSentryRenderer", () => {
     vi.doMock("@sentry/react", () => ({
       init: mockReactInit,
     }));
+
+    Object.assign(window, { gamelord: { sentryEnabled: true } });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, "gamelord");
+  });
+
+  it("does not initialize when the main process has Sentry disabled", async () => {
+    Object.assign(window, { gamelord: { sentryEnabled: false } });
+    const { initSentryRenderer } = await import("./sentry");
+    initSentryRenderer();
+
+    expect(mockElectronInit).not.toHaveBeenCalled();
+    expect(mockBrowserTracingIntegration).not.toHaveBeenCalled();
+    expect(mockReplayIntegration).not.toHaveBeenCalled();
+  });
+
+  it("does not initialize when the preload API is unavailable", async () => {
+    Reflect.deleteProperty(window, "gamelord");
+    const { initSentryRenderer } = await import("./sentry");
+    initSentryRenderer();
+
+    expect(mockElectronInit).not.toHaveBeenCalled();
   });
 
   it("calls Sentry.init with React integration as second argument", async () => {

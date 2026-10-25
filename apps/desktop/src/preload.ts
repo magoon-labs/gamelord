@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import { SENTRY_ENABLED_ARG } from "./types/sentry";
 
 // ---------------------------------------------------------------------------
 // SharedArrayBuffer MessagePort bridge
@@ -228,6 +229,10 @@ contextBridge.exposeInMainWorld("gamelord", {
 
   // Platform info for conditional UI (e.g. window controls on non-macOS)
   platform: process.platform as "darwin" | "win32" | "linux",
+
+  // Whether the main process initialized Sentry. The renderer SDK only starts
+  // when this is true (see SENTRY_ENABLED_ARG).
+  sentryEnabled: process.argv.includes(SENTRY_ENABLED_ARG),
 
   // Auto-updates
   updates: {
