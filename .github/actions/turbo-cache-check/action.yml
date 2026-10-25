@@ -1,0 +1,52 @@
+name: Turbo cache check
+description: >-
+  Report whether every given turbo task is already in the remote cache. Turbo
+  hashes from the lockfile and git-tracked sources, so this runs before
+  `pnpm install`; when everything hits, the job can skip install entirely and
+  let turbo replay the cached logs and outputs.
+
+inputs:
+  tasks:
+    description: Space-separated turbo tasks the job will run.
+    required: true
+
+outputs:
+  all-cached:
+    description: "'true' when every task with a command is a remote cache hit."
+    value: ${{ steps.check.outputs.all-cached }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check turbo cache
+      id: check
+      shell: bash
+      env:
+        TASKS: ${{ inputs.tasks }}
+      run: |
+        # Pin to the lockfile's turbo so hashing matches the installed CLI.
+        version=$(sed -nE 's/^  turbo@([0-9][0-9.]*):$/\1/p' pnpm-lock.yaml | head -n 1)
+        echo "TURBO_VERSION=$version" >> "$GITHUB_ENV"
+
+        if [[ -z "${TURBO_TOKEN:-}" || -z "${TURBO_TEAM:-}" ]]; then
+          echo "Remote cache not configured; running tasks normally."
+          echo "all-cached=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        dry="$RUNNER_TEMP/turbo-dry.json"
+        # shellcheck disable=SC2086 # TASKS is intentionally word-split
+        if ! npx -y "turbo@$version" run $TASKS --dry=json > "$dry"; then
+          echo "Dry run failed; running tasks normally."
+          echo "all-cached=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Transit nodes and packages without the script have no command and
+        # are never cached, so they don't count.
+        jq -r '.tasks[] | select(.command != "<NONEXISTENT>") | "\(.cache.status)  \(.taskId)"' "$dry"
+        all=$(jq '[.tasks[] | select(.command != "<NONEXISTENT>") | .cache.status == "HIT"] | all' "$dry")
+        echo "all-cached=$all" >> "$GITHUB_OUTPUT"
+        if [[ "$all" == "true" ]]; then
+          echo "Every task is cached; skipping dependency install."
+        fi
