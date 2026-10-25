@@ -871,6 +871,7 @@ export const LibraryView: React.FC<{
         >
           <span className="flex-1">{syncNotification.message}</span>
           <button
+            type="button"
             onClick={() => {
               playSfx("click");
               setSyncNotification(null);

@@ -151,6 +151,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
       {/* Dismiss (for downloaded and error states) */}
       {(isDownloaded || isError) && (
         <button
+          type="button"
           onClick={onDismiss}
           className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
           aria-label="Dismiss"

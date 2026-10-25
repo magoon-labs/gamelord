@@ -125,6 +125,7 @@ export const DiscSwapOverlay: React.FC<DiscSwapOverlayProps> = ({
 
             return (
               <button
+                type="button"
                 key={disc.index}
                 disabled={!canSwap && !canBrowse}
                 onClick={() => {

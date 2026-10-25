@@ -15,8 +15,8 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0(eslint@9.39.3(jiti@2.7.0))
       '@nkzw/oxlint-config':
-        specifier: ^1.0.1
-        version: 1.0.1(@typescript-eslint/eslint-plugin@8.72.0(@typescript-eslint/parser@8.56.1(eslint@9.39.3(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.3(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.3(jiti@2.7.0))(oxlint@1.89.0)(typescript@5.9.3)
+        specifier: ^2.0.1
+        version: 2.0.1(eslint@9.39.3(jiti@2.7.0))(oxlint@1.89.0)(typescript@5.9.3)
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.72.0
         version: 8.72.0(@typescript-eslint/parser@8.56.1(eslint@9.39.3(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.3(jiti@2.7.0))(typescript@5.9.3)
@@ -976,10 +976,10 @@ packages:
     peerDependencies:
       eslint: '>= 9'
 
-  '@nkzw/oxlint-config@1.0.1':
-    resolution: {integrity: sha512-w5RVelszy9bC0CtqUF7eO60K8rdRXCjN5jOJne7KTdpJ5c/gTW9OkEjssdTz9a7CKXdEiqv0iKpb7/Sxq3n/hg==}
+  '@nkzw/oxlint-config@2.0.1':
+    resolution: {integrity: sha512-TgQjl5adJlTg10EU8WmvS78Ce7q+Un59Wyd6lq62Vg/pM8GLa2SEuG3koCziDm+pXJ2d+qkuQgcZ0Ton883yBg==}
     peerDependencies:
-      oxlint: '>=1.46.0'
+      oxlint: '>=1.79.0'
 
   '@noble/hashes@1.4.0':
     resolution: {integrity: sha512-V1JJ1WTRUqHHrOSh597hURcMqVKVGL/ea3kv0gSnEdsEZ0/+VyPghM1lMNGc00z7CIQorSvbKpuJkxvuHbvdbg==}
@@ -6611,16 +6611,13 @@ snapshots:
     dependencies:
       eslint: 9.39.3(jiti@2.7.0)
 
-  '@nkzw/oxlint-config@1.0.1(@typescript-eslint/eslint-plugin@8.72.0(@typescript-eslint/parser@8.56.1(eslint@9.39.3(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.3(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.3(jiti@2.7.0))(oxlint@1.89.0)(typescript@5.9.3)':
+  '@nkzw/oxlint-config@2.0.1(eslint@9.39.3(jiti@2.7.0))(oxlint@1.89.0)(typescript@5.9.3)':
     dependencies:
       '@nkzw/eslint-plugin': 2.0.0(eslint@9.39.3(jiti@2.7.0))
       eslint-plugin-no-only-tests: 3.4.0
       eslint-plugin-perfectionist: 5.13.0(eslint@9.39.3(jiti@2.7.0))(typescript@5.9.3)
-      eslint-plugin-react-hooks: 7.1.1(eslint@9.39.3(jiti@2.7.0))
-      eslint-plugin-unused-imports: 4.4.1(@typescript-eslint/eslint-plugin@8.72.0(@typescript-eslint/parser@8.56.1(eslint@9.39.3(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.3(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.3(jiti@2.7.0))
       oxlint: 1.89.0
     transitivePeerDependencies:
-      - '@typescript-eslint/eslint-plugin'
       - eslint
       - supports-color
       - typescript
