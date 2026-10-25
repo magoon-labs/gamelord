@@ -108,9 +108,19 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-headless-shell
 
       # Vitest browser mode runs headless, which only needs the headless shell
-      # (not full Chromium). Installing is a no-op when the cache hit.
+      # (not full Chromium). Installing is a no-op when the cache hit. The
+      # runner image usually ships every shared library the shell links
+      # against, so only fall back to apt (~9s) when ldd finds a gap.
       - name: Install Playwright headless shell (Storybook story tests)
-        run: pnpm --filter @gamelord/ui exec playwright install chromium --only-shell --with-deps
+        run: |
+          pnpm --filter @gamelord/ui exec playwright install chromium --only-shell
+          shell_bin=$(find ~/.cache/ms-playwright -type f -name chrome-headless-shell | head -n 1)
+          missing=$(ldd "$shell_bin" | grep "not found" || true)
+          if [[ -n "$missing" ]]; then
+            echo "Missing shared libraries, installing system deps:"
+            echo "$missing"
+            pnpm --filter @gamelord/ui exec playwright install-deps chromium-headless-shell
+          fi
 
       - name: Run tests
         run: pnpm exec turbo run test --continue
