@@ -21,6 +21,12 @@ env:
   # No CI job launches Electron; skip the ~100MB binary download.
   ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
   TURBO_TELEMETRY_DISABLED: "1"
+  # Vercel Remote Cache, shared by PR, merge-queue, and main runs. Artifacts
+  # are signed (remoteCache.signature in turbo.json) and verified on read.
+  # Unset for fork and Dependabot runs, which fall back to running everything.
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  TURBO_REMOTE_CACHE_SIGNATURE_KEY: ${{ secrets.TURBO_REMOTE_CACHE_SIGNATURE_KEY }}
 
 jobs:
   changes:
@@ -69,7 +75,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: ./.github/actions/turbo-cache-check
+        id: turbo
+        with:
+          tasks: lint typecheck format:check bundle
+
       - uses: ./.github/actions/setup
+        if: steps.turbo.outputs.all-cached != 'true'
         with:
           save-cache: "true"
 
@@ -77,7 +89,7 @@ jobs:
       # all failures instead of stopping at the first. `bundle` verifies the
       # electron-vite production build compiles.
       - name: Lint, type check, format check & bundle
-        run: pnpm exec turbo run lint typecheck format:check bundle --continue
+        run: npx -y "turbo@$TURBO_VERSION" run lint typecheck format:check bundle --continue
 
   lint-typecheck-format-skip:
     name: Lint, Type Check & Format
@@ -95,13 +107,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: ./.github/actions/turbo-cache-check
+        id: turbo
+        with:
+          tasks: test
+
       - uses: ./.github/actions/setup
+        if: steps.turbo.outputs.all-cached != 'true'
 
       - name: Resolve Playwright version
+        if: steps.turbo.outputs.all-cached != 'true'
         id: playwright
         run: echo "version=$(pnpm --filter @gamelord/ui exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
+        if: steps.turbo.outputs.all-cached != 'true'
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
@@ -112,6 +132,7 @@ jobs:
       # runner image usually ships every shared library the shell links
       # against, so only fall back to apt (~9s) when ldd finds a gap.
       - name: Install Playwright headless shell (Storybook story tests)
+        if: steps.turbo.outputs.all-cached != 'true'
         run: |
           pnpm --filter @gamelord/ui exec playwright install chromium --only-shell
           shell_bin=$(find ~/.cache/ms-playwright -type f -name chrome-headless-shell | head -n 1)
@@ -123,7 +144,7 @@ jobs:
           fi
 
       - name: Run tests
-        run: pnpm exec turbo run test --continue
+        run: npx -y "turbo@$TURBO_VERSION" run test --continue
 
   test-skip:
     name: Tests
