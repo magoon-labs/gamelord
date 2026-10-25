@@ -1,4 +1,4 @@
-import { promises as fs, createReadStream } from "node:fs";
+import { promises as fs, createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import { app } from "electron";
 import { EventEmitter } from "node:events";
@@ -272,11 +272,17 @@ export class LibraryService extends EventEmitter {
   private stringifyInWorker(data: unknown): Promise<string> {
     return new Promise((resolve, reject) => {
       const workerPath = path.join(__dirname, "workers/json-stringify-worker.mjs");
+      // `new Worker()` doesn't throw for a missing file: it boots a thread that
+      // then fails asynchronously. Check up front so tests and pre-build runs
+      // skip the thread startup entirely.
+      if (!existsSync(workerPath)) {
+        resolve(JSON.stringify(data, null, 2));
+        return;
+      }
       let worker: Worker;
       try {
         worker = new Worker(workerPath);
       } catch {
-        // Worker file doesn't exist (tests, or pre-build). Fall back to sync stringify.
         resolve(JSON.stringify(data, null, 2));
         return;
       }
