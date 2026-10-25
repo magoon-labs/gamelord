@@ -1,0 +1,43 @@
+# Temporary: verifies electron-builder packages from tools/packaging on the
+# release platforms. Unsigned and never published. Remove before merge.
+name: Packaging probe
+
+on:
+  push:
+    branches: [ci/isolate-electron-builder]
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --mac --publish never
+          - os: windows-latest
+            args: --win --publish never
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build native addon
+        working-directory: apps/desktop/native
+        run: npx node-gyp rebuild
+      - name: Build app
+        working-directory: apps/desktop
+        shell: bash
+        run: npx electron-vite build
+      - name: Package (unsigned)
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: node ../../tools/packaging/node_modules/electron-builder/cli.js ${{ matrix.args }}
+      - name: List artifacts
+        shell: bash
+        run: ls -la apps/desktop/dist

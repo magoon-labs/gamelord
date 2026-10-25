@@ -18,10 +18,11 @@ runs:
       with:
         node-version: 24
 
-    # node_modules is fully determined by the lockfile and the workspace
-    # manifests (no dependency runs install scripts except electron, whose
-    # binary download CI skips), so restoring it is equivalent to installing.
-    # corepack's pnpm download rides along to skip its ~1s fetch.
+    # node_modules is fully determined by the lockfile, the workspace
+    # manifests and the install filter below (bump the key prefix if the
+    # filter changes). No dependency runs install scripts except electron,
+    # whose binary download CI skips, so restoring it is equivalent to
+    # installing. corepack's pnpm download rides along to skip its ~1s fetch.
     - name: Restore node_modules
       id: modules
       uses: actions/cache/restore@v6
@@ -31,7 +32,7 @@ runs:
           apps/*/node_modules
           packages/*/node_modules
           ~/.cache/node/corepack
-        key: node-modules-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+        key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
 
     # Corepack ships with Node 24 and resolves pnpm from `packageManager`,
     # which is faster than pnpm/action-setup's self-install.
@@ -57,10 +58,12 @@ runs:
         # downloads the delta.
         restore-keys: pnpm-store-${{ runner.os }}-
 
+    # CI never packages the app, so skip electron-builder and its ~75MB of
+    # prebuilt packaging binaries (release and nightly install everything).
     - name: Install dependencies
       if: steps.modules.outputs.cache-hit != 'true'
       shell: bash
-      run: pnpm install --frozen-lockfile --prefer-offline
+      run: pnpm install --frozen-lockfile --prefer-offline --filter '!@gamelord/packaging'
 
     - name: Save node_modules
       if: inputs.save-cache == 'true' && steps.modules.outputs.cache-hit != 'true'
