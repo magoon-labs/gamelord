@@ -110,23 +110,30 @@ jobs:
       - name: Resolve Playwright version
         if: env.NEEDS_BROWSER == 'true' && steps.turbo.outputs.all-cached != 'true'
         id: playwright
-        run: echo "version=$(pnpm --filter @gamelord/ui exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        # Read the lockfile instead of spawning `playwright --version` (~2s).
+        run: echo "version=$(sed -nE 's/^  playwright-core@([0-9][0-9.]*):$/\1/p' pnpm-lock.yaml | head -n 1)" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
         if: env.NEEDS_BROWSER == 'true' && steps.turbo.outputs.all-cached != 'true'
+        id: browsers
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-headless-shell
 
       # Vitest browser mode runs headless, which only needs the headless shell
-      # (not full Chromium). Installing is a no-op when the cache hit. The
-      # runner image usually ships every shared library the shell links
-      # against, so only fall back to apt (~9s) when ldd finds a gap.
+      # (not full Chromium). The cache key pins the Playwright version, so a
+      # hit already holds the right build. The runner image usually ships
+      # every shared library the shell links against, so only fall back to
+      # apt (~9s) when ldd finds a gap.
       - name: Install Playwright headless shell
         if: env.NEEDS_BROWSER == 'true' && steps.turbo.outputs.all-cached != 'true'
+        env:
+          BROWSERS_HIT: ${{ steps.browsers.outputs.cache-hit }}
         run: |
-          pnpm --filter @gamelord/ui exec playwright install chromium --only-shell
+          if [[ "$BROWSERS_HIT" != "true" ]]; then
+            pnpm --filter @gamelord/ui exec playwright install chromium --only-shell
+          fi
           shell_bin=$(find ~/.cache/ms-playwright -type f -name chrome-headless-shell | head -n 1)
           missing=$(ldd "$shell_bin" | grep "not found" || true)
           if [[ -n "$missing" ]]; then
