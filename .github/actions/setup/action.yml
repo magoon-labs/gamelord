@@ -1,0 +1,52 @@
+name: Setup workspace
+description: Install Node, pnpm, and workspace dependencies with a warm pnpm store.
+
+inputs:
+  save-cache:
+    description: >-
+      Save the pnpm store when the exact key missed. Enable in one job per OS
+      so parallel jobs don't race to compress and upload the same cache.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    # Corepack ships with Node 24 and resolves pnpm from `packageManager`,
+    # which is faster than pnpm/action-setup's self-install.
+    - name: Enable pnpm
+      shell: bash
+      env:
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      run: |
+        corepack enable
+        echo "PNPM_STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+    - name: Restore pnpm store
+      id: store
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ env.PNPM_STORE }}
+        key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+        # A lockfile bump still starts from the previous store and only
+        # downloads the delta.
+        restore-keys: pnpm-store-${{ runner.os }}-
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile --prefer-offline
+
+    - name: Prune pnpm store
+      if: inputs.save-cache == 'true' && steps.store.outputs.cache-hit != 'true'
+      shell: bash
+      run: pnpm store prune
+
+    - name: Save pnpm store
+      if: inputs.save-cache == 'true' && steps.store.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ env.PNPM_STORE }}
+        key: ${{ steps.store.outputs.cache-primary-key }}
