@@ -75,7 +75,7 @@ jobs:
       # all failures instead of stopping at the first. `bundle` verifies the
       # electron-vite production build compiles.
       - name: Lint, type check, format check & bundle
-        run: npx -y "turbo@$TURBO_VERSION" run lint typecheck format:check bundle --continue
+        run: turbo run lint typecheck format:check bundle --continue
 
   # Each shard gets its own runner: run together, the three suites saturate
   # a 4-vCPU runner and take the sum of their times instead of the max.
@@ -137,7 +137,7 @@ jobs:
 
       - name: Run tests
         # shellcheck disable=SC2086 # TASKS is intentionally word-split
-        run: npx -y "turbo@$TURBO_VERSION" run $TASKS --continue
+        run: turbo run $TASKS --continue
 
   chromatic:
     name: Visual Regression (Chromatic)
