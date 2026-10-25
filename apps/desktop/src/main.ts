@@ -10,6 +10,7 @@ import {
 } from "electron";
 import path from "node:path";
 import { setupAppMenu } from "./main/appMenu";
+import { createArtworkProtocolHandler } from "./main/artworkProtocol";
 import { IPCHandlers } from "./main/ipc/handlers";
 import { mainLog } from "./main/logger";
 import { AutoUpdaterService } from "./main/services/AutoUpdaterService";
@@ -172,21 +173,13 @@ app.on("ready", () => {
     callback(true);
   });
 
-  // Register artwork:// protocol to serve cached cover art images
-  // from the sandboxed renderer via <img src="artwork://gameId.png">.
-  // The CORP header is required because COEP require-corp is enabled above.
-  protocol.handle("artwork", async (request) => {
-    const filename = request.url.slice("artwork://".length);
-    const filePath = path.join(app.getPath("userData"), "artwork", filename);
-    const response = await net.fetch(`file://${filePath}`);
-    const headers = new Headers(response.headers);
-    headers.set("Cross-Origin-Resource-Policy", "same-origin");
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
-  });
+  // Register artwork:// protocol to serve cached cover art images.
+  protocol.handle(
+    "artwork",
+    createArtworkProtocolHandler(path.join(app.getPath("userData"), "artwork"), (url) =>
+      net.fetch(url),
+    ),
+  );
 
   // Initialize IPC handlers before creating window
   const preloadPath = path.join(__dirname, "../preload/index.cjs");
