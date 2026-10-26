@@ -138,7 +138,7 @@ jobs:
 
       - name: Package, sign, and notarize
         working-directory: apps/desktop
-        run: npx electron-builder --mac --publish never
+        run: node ../../tools/packaging/node_modules/electron-builder/cli.js --mac --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_KEYCHAIN: ${{ runner.temp }}/signing.keychain-db
@@ -191,7 +191,7 @@ jobs:
       - name: Package
         working-directory: apps/desktop
         shell: bash
-        run: npx electron-builder --win
+        run: node ../../tools/packaging/node_modules/electron-builder/cli.js --win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

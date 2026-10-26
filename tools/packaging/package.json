@@ -1,0 +1,9 @@
+{
+  "name": "@gamelord/packaging",
+  "version": "0.1.0",
+  "private": true,
+  "description": "electron-builder, kept out of the app's dependencies so lint/test installs skip its prebuilt packaging binaries. Run from apps/desktop: node ../../tools/packaging/node_modules/electron-builder/cli.js",
+  "devDependencies": {
+    "electron-builder": "^26.18.0"
+  }
+}

@@ -101,7 +101,7 @@ jobs:
 
       - name: Package, sign, notarize, and publish
         working-directory: apps/desktop
-        run: npx electron-builder --mac --publish always
+        run: node ../../tools/packaging/node_modules/electron-builder/cli.js --mac --publish always
         env:
           CSC_KEYCHAIN: ${{ runner.temp }}/signing.keychain-db
           APPLE_API_KEY: ~/.private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
@@ -157,6 +157,6 @@ jobs:
       - name: Package and publish
         working-directory: apps/desktop
         shell: bash
-        run: npx electron-builder --win --publish always
+        run: node ../../tools/packaging/node_modules/electron-builder/cli.js --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

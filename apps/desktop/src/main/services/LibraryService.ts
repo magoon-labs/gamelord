@@ -1,4 +1,4 @@
-import { promises as fs, createReadStream } from "node:fs";
+import { promises as fs, createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import { app } from "electron";
 import { EventEmitter } from "node:events";
@@ -88,6 +88,8 @@ export class LibraryService extends EventEmitter {
   private dirty = false;
   /** Resolves once the library JSON has been loaded from disk. */
   private libraryLoaded: Promise<void>;
+  /** Resolves once config load (and its backfill/migration chain) has finished. */
+  private configLoaded: Promise<void>;
 
   constructor() {
     super();
@@ -102,7 +104,7 @@ export class LibraryService extends EventEmitter {
     };
     // Fire-and-forget — errors are logged, not thrown, so the constructor
     // doesn't produce unhandled promise rejections when the app starts.
-    this.loadConfig().catch((error: unknown) => {
+    this.configLoaded = this.loadConfig().catch((error: unknown) => {
       libraryLog.error("Failed to load config:", error);
     });
     this.libraryLoaded = this.loadLibrary().catch((error: unknown) => {
@@ -113,6 +115,11 @@ export class LibraryService extends EventEmitter {
   /** Wait for the library to finish loading from disk. */
   whenReady(): Promise<void> {
     return this.libraryLoaded;
+  }
+
+  /** Wait for both config and library initialization chains to settle. */
+  async whenInitialized(): Promise<void> {
+    await Promise.all([this.configLoaded, this.libraryLoaded]);
   }
 
   private async loadConfig(): Promise<void> {
@@ -265,11 +272,17 @@ export class LibraryService extends EventEmitter {
   private stringifyInWorker(data: unknown): Promise<string> {
     return new Promise((resolve, reject) => {
       const workerPath = path.join(__dirname, "workers/json-stringify-worker.mjs");
+      // `new Worker()` doesn't throw for a missing file: it boots a thread that
+      // then fails asynchronously. Check up front so tests and pre-build runs
+      // skip the thread startup entirely.
+      if (!existsSync(workerPath)) {
+        resolve(JSON.stringify(data, null, 2));
+        return;
+      }
       let worker: Worker;
       try {
         worker = new Worker(workerPath);
       } catch {
-        // Worker file doesn't exist (tests, or pre-build). Fall back to sync stringify.
         resolve(JSON.stringify(data, null, 2));
         return;
       }

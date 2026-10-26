@@ -103,11 +103,8 @@ importers:
         specifier: ^17.4.2
         version: 17.4.2
       electron:
-        specifier: 41.10.3
-        version: 41.10.3
-      electron-builder:
-        specifier: ^26.18.0
-        version: 26.18.0(electron-builder-squirrel-windows@25.1.8)
+        specifier: 45.0.0
+        version: 45.0.0
       electron-vite:
         specifier: ^5.0.0
         version: 5.0.0(@swc/core@1.15.11)(vite@8.3.5(@types/node@25.2.2)(esbuild@0.28.2)(jiti@2.7.0))
@@ -268,6 +265,12 @@ importers:
       vitest:
         specifier: ^5.0.0
         version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.5)(@vitest/ui@5.0.5)(happy-dom@21.0.4)(jsdom@28.0.0(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0))
+
+  tools/packaging:
+    devDependencies:
+      electron-builder:
+        specifier: ^26.18.0
+        version: 26.18.0(electron-builder-squirrel-windows@25.1.8)
 
 packages:
 
@@ -3564,8 +3567,8 @@ packages:
       '@swc/core':
         optional: true
 
-  electron@41.10.3:
-    resolution: {integrity: sha512-MJuSODPw8siv/I8JjhctW/cS/XNldwI4gLRyyWZx6QkoZJUDgbEvitp7IVOnGrHENTQb6Udo+zMpKhFnhlIhdg==}
+  electron@45.0.0:
+    resolution: {integrity: sha512-yjz4uhMBcO6L5X7CWgRMobf2EMJPnb9j4zuf+nu/TU/6E4Sqfx7fn/a2eACo4qngjml/0JnsoZhxYroJLxLd2w==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -8998,7 +9001,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@41.10.3:
+  electron@45.0.0:
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.1.0

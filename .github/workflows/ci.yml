@@ -17,113 +17,134 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # No CI job launches Electron; skip the ~100MB binary download.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+  TURBO_TELEMETRY_DISABLED: "1"
+  # Vercel Remote Cache, shared by PR, merge-queue, and main runs. Artifacts
+  # are signed (remoteCache.signature in turbo.json) and verified on read.
+  # Unset for fork and Dependabot runs, which fall back to running everything.
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  TURBO_REMOTE_CACHE_SIGNATURE_KEY: ${{ secrets.TURBO_REMOTE_CACHE_SIGNATURE_KEY }}
+
 jobs:
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
-    # Merge-queue runs execute every real job so each required check reports
-    # under its real name; the *-skip twins only run on push/pull_request.
+    # Gates only Chromatic and the native build. Lint and test jobs start
+    # immediately: the Turbo remote cache already turns unchanged work into a
+    # replay, so waiting on this job would only add latency. paths-filter
+    # diffs merge-group runs against merge_group.base_sha, and skipped jobs
+    # still report their required check name through the *-skip twins.
     outputs:
-      code: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.code }}
-      ui: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.ui }}
-      native: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.native }}
+      ui: ${{ steps.filter.outputs.ui }}
+      native: ${{ steps.filter.outputs.native }}
     steps:
       - uses: actions/checkout@v7
-        if: github.event_name != 'merge_group'
 
       - uses: dorny/paths-filter@v4
-        if: github.event_name != 'merge_group'
         id: filter
         with:
           filters: |
-            code:
-              - 'apps/**'
-              - 'packages/**'
-              - 'scripts/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'turbo.json'
-              - 'tsconfig*.json'
-              - 'oxlint.config.ts'
-              - 'vercel.json'
-              - '.github/workflows/**'
             ui:
               - 'packages/ui/**'
               - 'apps/desktop/src/renderer/components/**'
             native:
               - 'apps/desktop/native/**'
+              - '.github/actions/**'
+              - '.github/workflows/ci.yml'
 
   lint-typecheck-format:
     name: Lint, Type Check & Format
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/turbo-cache-check
+        id: turbo
         with:
-          node-version: 24
-          cache: pnpm
+          tasks: lint typecheck format:check bundle
 
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
+        if: steps.turbo.outputs.all-cached != 'true'
+        with:
+          save-cache: "true"
 
-      - name: Lint
-        run: pnpm lint
+      # One turbo invocation runs every check in parallel; --continue reports
+      # all failures instead of stopping at the first. `bundle` verifies the
+      # electron-vite production build compiles.
+      - name: Lint, type check, format check & bundle
+        run: turbo run lint typecheck format:check bundle --continue
 
-      - name: Type Check
-        run: pnpm typecheck
-
-      - name: Format Check
-        run: pnpm format:check
-
-  lint-typecheck-format-skip:
-    name: Lint, Type Check & Format
-    needs: changes
-    if: needs.changes.outputs.code != 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "No code changes detected — skipping"
-
+  # Each shard gets its own runner: run together, the three suites saturate
+  # a 4-vCPU runner and take the sum of their times instead of the max.
   test:
-    name: Tests
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    name: Tests (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - name: desktop
+            tasks: test --filter=@gamelord/desktop
+          - name: ui unit
+            tasks: test:unit --filter=@gamelord/ui
+          - name: ui stories
+            tasks: test:stories --filter=@gamelord/ui
+            browser: true
+    env:
+      TASKS: ${{ matrix.shard.tasks }}
+      NEEDS_BROWSER: ${{ matrix.shard.browser == true }}
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install system dependencies
-        run: |
-          # Remove Microsoft repos that intermittently return 403 on GitHub Actions runners
-          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list
-          sudo apt-get update && sudo apt-get install -y libasound2-dev
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/turbo-cache-check
+        id: turbo
         with:
-          node-version: 24
-          cache: pnpm
+          tasks: ${{ matrix.shard.tasks }}
 
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
+        if: steps.turbo.outputs.all-cached != 'true'
 
-      - name: Install Playwright Chromium (Storybook story tests)
-        run: pnpm --filter @gamelord/ui exec playwright install chromium --with-deps
+      - name: Resolve Playwright version
+        if: env.NEEDS_BROWSER == 'true' && steps.turbo.outputs.all-cached != 'true'
+        id: playwright
+        # Read the lockfile instead of spawning `playwright --version` (~2s).
+        run: echo "version=$(sed -nE 's/^  playwright-core@([0-9][0-9.]*):$/\1/p' pnpm-lock.yaml | head -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        if: env.NEEDS_BROWSER == 'true' && steps.turbo.outputs.all-cached != 'true'
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-headless-shell
+
+      # Vitest browser mode runs headless, which only needs the headless shell
+      # (not full Chromium). The cache key pins the Playwright version, so a
+      # hit already holds the right build. The runner image usually ships
+      # every shared library the shell links against, so only fall back to
+      # apt (~9s) when ldd finds a gap.
+      - name: Install Playwright headless shell
+        if: env.NEEDS_BROWSER == 'true' && steps.turbo.outputs.all-cached != 'true'
+        env:
+          BROWSERS_HIT: ${{ steps.browsers.outputs.cache-hit }}
+        run: |
+          if [[ "$BROWSERS_HIT" != "true" ]]; then
+            pnpm --filter @gamelord/ui exec playwright install chromium --only-shell
+          fi
+          shell_bin=$(find ~/.cache/ms-playwright -type f -name chrome-headless-shell | head -n 1)
+          missing=$(ldd "$shell_bin" | grep "not found" || true)
+          if [[ -n "$missing" ]]; then
+            echo "Missing shared libraries, installing system deps:"
+            echo "$missing"
+            pnpm --filter @gamelord/ui exec playwright install-deps chromium-headless-shell
+          fi
 
       - name: Run tests
-        run: pnpm test
-
-  test-skip:
-    name: Tests
-    needs: changes
-    if: needs.changes.outputs.code != 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "No code changes detected — skipping"
+        # shellcheck disable=SC2086 # TASKS is intentionally word-split
+        run: turbo run $TASKS --continue
 
   chromatic:
     name: Visual Regression (Chromatic)
@@ -135,23 +156,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/setup
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
+      # exitOnceUploaded: the job can't fail on visual diffs anyway
+      # (exitZeroOnChanges), and Chromatic reports snapshot results through
+      # its own commit status. Story render errors are already caught by the
+      # Storybook project in the Tests job.
       - name: Run Chromatic
         uses: chromaui/action@latest
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           workingDir: packages/ui
           exitZeroOnChanges: true
+          exitOnceUploaded: true
           autoAcceptChanges: main
-
 
   chromatic-skip:
     name: Visual Regression (Chromatic)
@@ -169,14 +187,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/setup
         with:
-          node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
+          save-cache: "true"
 
       - name: Build native addon
         working-directory: apps/desktop/native
