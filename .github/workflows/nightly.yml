@@ -21,12 +21,12 @@ concurrency:
 jobs:
   check-changes:
     name: Check for new commits
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
       tag_name: ${{ steps.check.outputs.tag_name }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           fetch-depth: 0
 
@@ -67,7 +67,7 @@ jobs:
     name: Build macOS DMG (Nightly)
     needs: check-changes
     if: needs.check-changes.outputs.should_build == 'true'
-    runs-on: macos-latest
+    runs-on: blacksmith-6vcpu-macos-15
     steps:
       - uses: actions/checkout@v7
 
@@ -159,7 +159,7 @@ jobs:
     name: Build Windows Installer (Nightly)
     needs: check-changes
     if: needs.check-changes.outputs.should_build == 'true'
-    runs-on: windows-latest
+    runs-on: blacksmith-4vcpu-windows-2025
     steps:
       - uses: actions/checkout@v7
 
@@ -208,9 +208,9 @@ jobs:
     name: Create nightly release
     needs: [check-changes, build-mac, build-windows]
     if: needs.check-changes.outputs.should_build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
 
       - name: Download macOS artifacts
         uses: actions/download-artifact@v8
@@ -254,9 +254,9 @@ jobs:
   cleanup:
     name: Prune old nightlies
     needs: publish-nightly
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
 
       - name: Delete old nightly releases (keep last 7)
         env:

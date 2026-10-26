@@ -31,7 +31,7 @@ env:
 jobs:
   changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Gates only Chromatic and the native build. Lint and test jobs start
     # immediately: the Turbo remote cache already turns unchanged work into a
     # replay, so waiting on this job would only add latency. paths-filter
@@ -41,7 +41,7 @@ jobs:
       ui: ${{ steps.filter.outputs.ui }}
       native: ${{ steps.filter.outputs.native }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
 
       - uses: dorny/paths-filter@v4
         id: filter
@@ -57,9 +57,9 @@ jobs:
 
   lint-typecheck-format:
     name: Lint, Type Check & Format
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
 
       - uses: ./.github/actions/turbo-cache-check
         id: turbo
@@ -81,7 +81,7 @@ jobs:
   # a 4-vCPU runner and take the sum of their times instead of the max.
   test:
     name: Tests (${{ matrix.shard.name }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     strategy:
       fail-fast: false
       matrix:
@@ -97,7 +97,7 @@ jobs:
       TASKS: ${{ matrix.shard.tasks }}
       NEEDS_BROWSER: ${{ matrix.shard.browser == true }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
 
       - uses: ./.github/actions/turbo-cache-check
         id: turbo
@@ -150,9 +150,9 @@ jobs:
     name: Visual Regression (Chromatic)
     needs: changes
     if: needs.changes.outputs.ui == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           fetch-depth: 0
 
@@ -175,7 +175,7 @@ jobs:
     name: Visual Regression (Chromatic)
     needs: changes
     if: needs.changes.outputs.ui != 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - run: echo "No code changes detected — skipping"
 
@@ -183,7 +183,7 @@ jobs:
     name: Native Addon Build (macos-latest)
     needs: changes
     if: needs.changes.outputs.native == 'true'
-    runs-on: macos-latest
+    runs-on: blacksmith-6vcpu-macos-15
     steps:
       - uses: actions/checkout@v7
 
@@ -199,6 +199,6 @@ jobs:
     name: Native Addon Build (macos-latest)
     needs: changes
     if: needs.changes.outputs.native != 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - run: echo "No native addon changes detected — skipping"
