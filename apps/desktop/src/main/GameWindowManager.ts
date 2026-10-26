@@ -11,6 +11,7 @@ import { animateWindowClose } from "./windowCloseAnimation";
 import { animateWindowOpen } from "./windowOpenAnimation";
 import { manageWindowState, saveWindowStateNow, type WindowStateConfig } from "./utils/windowState";
 import { gameWindowLog } from "./logger";
+import { sentryRendererArguments } from "./sentry";
 
 const execFileAsync = promisify(execFile);
 
@@ -119,6 +120,7 @@ export class GameWindowManager extends EventEmitter {
       show: !hasHeroTransition, // Hide initially if hero transition will animate it
       webPreferences: {
         preload: this.preloadPath,
+        additionalArguments: sentryRendererArguments(),
         contextIsolation: true,
         nodeIntegration: false,
         // Required for WebGL drawingBufferToneMapping({ mode: 'extended' })
@@ -325,6 +327,7 @@ export class GameWindowManager extends EventEmitter {
       skipTaskbar: true,
       webPreferences: {
         preload: this.preloadPath,
+        additionalArguments: sentryRendererArguments(),
         contextIsolation: true,
         nodeIntegration: false,
       },

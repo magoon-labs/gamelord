@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -16,8 +16,27 @@ describe("graceful startup — index.html", () => {
     expect(html).toContain("document.documentElement.style.colorScheme");
   });
 
-  it("sets body background based on resolved theme", () => {
-    expect(html).toContain("document.body.style.background = dark ? '#000' : '#fff'");
+  it("sets a pre-paint background on <html> that follows the .dark class", () => {
+    expect(html).toMatch(/html\s*\{[^}]*background:\s*#fff/);
+    expect(html).toMatch(/html\.dark\s*\{[^}]*background:\s*#000/);
+  });
+
+  it("runs the theme script without touching <body>, which doesn't exist yet in <head>", () => {
+    const script = html.match(/<head>[\s\S]*?<script>([\s\S]*?)<\/script>/)?.[1];
+    expect(script).toBeDefined();
+
+    const classList = { toggle: vi.fn() };
+    const documentStub = {
+      documentElement: { classList, style: { colorScheme: "" } },
+      body: null,
+    };
+    const run = new Function("window", "document", "localStorage", script!);
+
+    expect(() =>
+      run({ matchMedia: () => ({ matches: true }) }, documentStub, { getItem: () => null }),
+    ).not.toThrow();
+    expect(classList.toggle).toHaveBeenCalledWith("dark", true);
+    expect(documentStub.documentElement.style.colorScheme).toBe("dark");
   });
 
   it("starts #root with opacity 0 for fade-in", () => {

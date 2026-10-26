@@ -14,7 +14,7 @@ import { createArtworkProtocolHandler } from "./main/artworkProtocol";
 import { IPCHandlers } from "./main/ipc/handlers";
 import { mainLog } from "./main/logger";
 import { AutoUpdaterService } from "./main/services/AutoUpdaterService";
-import { initSentryMain } from "./main/sentry";
+import { initSentryMain, sentryRendererArguments } from "./main/sentry";
 import {
   getSavedWindowBounds,
   MAIN_WINDOW_CONFIG,
@@ -73,6 +73,7 @@ const createWindow = () => {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      additionalArguments: sentryRendererArguments(),
     },
   });
 
