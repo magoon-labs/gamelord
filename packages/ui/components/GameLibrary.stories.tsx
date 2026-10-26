@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { GameLibrary } from "./GameLibrary";
 
 const meta = {
@@ -107,6 +108,52 @@ export const Default: Story = {
       </div>
     ),
   ],
+};
+
+/** Choosing "Last Played" orders played games most-recent-first, unplayed games last. */
+export const SortByLastPlayed: Story = {
+  args: {
+    games: sampleGames,
+    onPlayGame() {
+      /* storybook action placeholder */
+    },
+  },
+  decorators: [
+    (Story) => (
+      <div className="p-8 bg-background min-h-screen">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cardTitles = () =>
+      canvas
+        .getAllByRole("button", { name: /^Play / })
+        .map((card) => card.getAttribute("aria-label")?.replace(/^Play /, ""));
+
+    // Default sort is by title
+    await expect(cardTitles()[0]).toBe("Castlevania");
+
+    const sortTrigger = canvas
+      .getAllByRole("combobox")
+      .find((trigger) => trigger.textContent === "Title");
+    await expect(sortTrigger).toBeDefined();
+    await userEvent.click(sortTrigger!);
+    // Select content renders in a portal outside the canvas
+    await userEvent.click(
+      await within(document.body).findByRole("option", { name: "Last Played" }),
+    );
+
+    await waitFor(() =>
+      expect(cardTitles().slice(0, 3)).toEqual([
+        "The Legend of Zelda",
+        "Super Mario Bros.",
+        "Super Metroid",
+      ]),
+    );
+    await expect(cardTitles()).toHaveLength(sampleGames.length);
+  },
 };
 
 export const Empty: Story = {

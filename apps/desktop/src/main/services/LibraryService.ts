@@ -74,6 +74,22 @@ export interface AmbiguousRomFile {
 /** Number of ROM files to hash concurrently. */
 const HASH_CONCURRENCY = 4;
 
+/**
+ * JSON stores `lastPlayed` as an ISO string. Turn it back into a `Date` so
+ * consumers can call `.getTime()`, and drop values that don't parse.
+ */
+function reviveDates(game: Game): void {
+  if (game.lastPlayed === undefined) {
+    return;
+  }
+  const lastPlayed = new Date(game.lastPlayed);
+  if (Number.isNaN(lastPlayed.getTime())) {
+    delete game.lastPlayed;
+  } else {
+    game.lastPlayed = lastPlayed;
+  }
+}
+
 export class LibraryService extends EventEmitter {
   private config: LibraryConfig;
   private games: Map<string, Game> = new Map();
@@ -324,6 +340,9 @@ export class LibraryService extends EventEmitter {
     }
 
     const games: Array<Game> = JSON.parse(data);
+    for (const game of games) {
+      reviveDates(game);
+    }
     this.games = new Map(games.map((game) => [game.id, game]));
     this.rebuildRomPathIndex();
     await this.migrateGameIds();
