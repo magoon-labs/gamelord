@@ -137,6 +137,7 @@ contextBridge.exposeInMainWorld("gamelord", {
       "library:scanProgress",
       "library:scanAmbiguous",
       "library:homebrewImported",
+      "library:gameUpdated",
       "artwork:progress",
       "artwork:syncComplete",
       "artwork:syncError",

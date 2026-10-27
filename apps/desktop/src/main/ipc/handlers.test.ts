@@ -505,6 +505,127 @@ describe("IPCHandlers", () => {
       expect(gameWindowManagerInstance.startTrackingRetroArchWindow).not.toHaveBeenCalled();
       expect(result).toEqual({ success: true });
     });
+
+    describe("lastPlayed", () => {
+      const nativeCoreMock = (hasAutoSave: boolean) => ({
+        hasAutoSave: vi.fn(() => hasAutoSave),
+        deleteAutoSave: vi.fn(),
+        getCorePath: vi.fn(() => "/cores/fceumm.dylib"),
+        getRomPath: vi.fn(() => "/roms/smb.nes"),
+        getSystemDir: vi.fn(() => "/bios"),
+        getSaveDir: vi.fn(() => "/saves"),
+        getSramDir: vi.fn(() => "/saves"),
+        getSaveStatesDir: vi.fn(() => "/savestates"),
+      });
+
+      const setUpNativeLaunch = (hasAutoSave = false) => {
+        libraryServiceInstance.getGames.mockReturnValue([fakeGame]);
+        libraryServiceInstance.updateGame.mockResolvedValue(undefined);
+        emulatorManagerInstance.launchGame.mockResolvedValue(undefined);
+        emulatorManagerInstance.isNativeMode.mockReturnValue(true);
+        emulatorManagerInstance.getCurrentEmulator.mockReturnValue(nativeCoreMock(hasAutoSave));
+        gameWindowManagerInstance.createNativeGameWindow.mockReturnValue({});
+      };
+
+      it("records lastPlayed after the core initializes in native mode", async () => {
+        setUpNativeLaunch();
+        const before = Date.now();
+
+        const result = await getHandler("emulator:launch")(fakeEvent, "/roms/smb.nes", "nes");
+
+        expect(result).toEqual({ success: true });
+        expect(libraryServiceInstance.updateGame).toHaveBeenCalledTimes(1);
+        const [gameId, updates] = libraryServiceInstance.updateGame.mock.calls[0];
+        expect(gameId).toBe("game-1");
+        expect(updates.lastPlayed).toBeInstanceOf(Date);
+        expect(updates.lastPlayed.getTime()).toBeGreaterThanOrEqual(before);
+        // Stamped only once the worker has initialized
+        expect(workerClientInstance.init.mock.invocationCallOrder[0]).toBeLessThan(
+          libraryServiceInstance.updateGame.mock.invocationCallOrder[0],
+        );
+      });
+
+      it("records lastPlayed on a successful legacy overlay launch", async () => {
+        libraryServiceInstance.getGames.mockReturnValue([fakeGame]);
+        libraryServiceInstance.updateGame.mockResolvedValue(undefined);
+        emulatorManagerInstance.launchGame.mockResolvedValue(undefined);
+        emulatorManagerInstance.isNativeMode.mockReturnValue(false);
+
+        await getHandler("emulator:launch")(fakeEvent, "/roms/smb.nes", "nes", "retroarch");
+
+        expect(libraryServiceInstance.updateGame).toHaveBeenCalledWith("game-1", {
+          lastPlayed: expect.any(Date),
+        });
+      });
+
+      it("notifies renderer windows so the library view updates without a rescan", async () => {
+        setUpNativeLaunch();
+        const send = vi.fn();
+        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+          { webContents: { send } } as unknown as BrowserWindowType,
+        ]);
+
+        await getHandler("emulator:launch")(fakeEvent, "/roms/smb.nes", "nes");
+
+        expect(send).toHaveBeenCalledWith("library:gameUpdated", {
+          gameId: "game-1",
+          updates: { lastPlayed: expect.any(Date) },
+        });
+      });
+
+      it("does not record lastPlayed when the resume dialog is cancelled", async () => {
+        setUpNativeLaunch(true);
+        const send = vi.fn((channel: string, payload: { requestId: string }) => {
+          if (channel === "dialog:showResumeGame") {
+            getOnListener("dialog:resumeGameResponse")({}, payload.requestId, {
+              action: "cancel",
+              remember: false,
+            });
+          }
+        });
+        vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue({
+          webContents: { send },
+        } as unknown as BrowserWindowType);
+
+        const result = await getHandler("emulator:launch")(fakeEvent, "/roms/smb.nes", "nes");
+
+        expect(result).toEqual({ success: false, error: "cancelled" });
+        expect(libraryServiceInstance.updateGame).not.toHaveBeenCalled();
+      });
+
+      it("does not record lastPlayed when the core fails to initialize", async () => {
+        setUpNativeLaunch();
+        vi.mocked(EmulationWorkerClient).mockImplementationOnce(function (
+          this: Record<string, unknown>,
+        ) {
+          Object.assign(this, { init: vi.fn().mockRejectedValue(new Error("Core crashed")) });
+          return this as unknown as EmulationWorkerClient;
+        } as unknown as () => EmulationWorkerClient);
+
+        const result = await getHandler("emulator:launch")(fakeEvent, "/roms/smb.nes", "nes");
+
+        expect(result).toEqual({ success: false, error: "Core crashed" });
+        expect(libraryServiceInstance.updateGame).not.toHaveBeenCalled();
+      });
+
+      it("does not record lastPlayed when launchGame fails", async () => {
+        libraryServiceInstance.getGames.mockReturnValue([fakeGame]);
+        emulatorManagerInstance.launchGame.mockRejectedValue(new Error("Core not found"));
+
+        await getHandler("emulator:launch")(fakeEvent, "/roms/smb.nes", "nes");
+
+        expect(libraryServiceInstance.updateGame).not.toHaveBeenCalled();
+      });
+
+      it("still reports success if persisting lastPlayed fails", async () => {
+        setUpNativeLaunch();
+        libraryServiceInstance.updateGame.mockRejectedValue(new Error("disk full"));
+
+        const result = await getHandler("emulator:launch")(fakeEvent, "/roms/smb.nes", "nes");
+
+        expect(result).toEqual({ success: true });
+      });
+    });
   });
 
   // -----------------------------------------------------------------------

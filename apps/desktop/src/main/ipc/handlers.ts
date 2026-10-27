@@ -296,6 +296,8 @@ export class IPCHandlers {
             }
           }
 
+          await this.recordLastPlayed(game.id);
+
           return { success: true };
         } catch (error) {
           ipcLog.error("Failed to launch emulator:", error);
@@ -1014,6 +1016,24 @@ export class IPCHandlers {
     // writes so artwork downloaded during this session isn't lost on quit.
     this.artworkService.cancelSync();
     await this.libraryService.flushSave();
+  }
+
+  /**
+   * Stamp a game's lastPlayed after a successful launch, persist it, and push
+   * the change to renderer windows so the library view updates in place.
+   * A failed write is logged rather than failing a launch that already worked.
+   */
+  private async recordLastPlayed(gameId: string): Promise<void> {
+    const updates: Partial<Game> = { lastPlayed: new Date() };
+    try {
+      await this.libraryService.updateGame(gameId, updates);
+    } catch (error) {
+      ipcLog.warn("Failed to record lastPlayed:", error);
+      return;
+    }
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send("library:gameUpdated", { gameId, updates });
+    }
   }
 
   /**

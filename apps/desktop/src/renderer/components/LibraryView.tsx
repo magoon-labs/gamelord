@@ -187,6 +187,13 @@ export const LibraryView: React.FC<{
       loadLibrary();
     });
 
+    // Patch a single game in place when the main process updates it (e.g.
+    // lastPlayed stamped on launch) so the library stays current without a reload.
+    api.on("library:gameUpdated", (raw: unknown) => {
+      const { gameId, updates } = raw as { gameId: string; updates: Partial<AppGame> };
+      setGames((prev) => prev.map((g) => (g.id === gameId ? { ...g, ...updates } : g)));
+    });
+
     api.on("library:scanProgress", (raw: unknown) => {
       const progress = raw as {
         game: AppGame;
@@ -356,6 +363,7 @@ export const LibraryView: React.FC<{
     return () => {
       api.removeAllListeners("library:scanProgress");
       api.removeAllListeners("library:homebrewImported");
+      api.removeAllListeners("library:gameUpdated");
       api.removeAllListeners("core:downloadProgress");
       api.removeAllListeners("artwork:progress");
       api.removeAllListeners("artwork:syncComplete");

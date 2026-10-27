@@ -1423,6 +1423,57 @@ describe("LibraryService", () => {
 
       fs.unlinkSync(romPath);
     });
+
+    it("revives lastPlayed as a Date after a save and reload", async () => {
+      const romPath = path.join(ROMS_DIR, "last_played.nes");
+      fs.writeFileSync(romPath, "last-played-content");
+
+      const first = await createService();
+      const game = await first.addGame(romPath, "nes");
+      const lastPlayed = new Date("2026-03-14T15:09:26.535Z");
+      await first.updateGame(game!.id, { lastPlayed });
+
+      // JSON on disk holds an ISO string, not a Date
+      const onDisk: Array<Record<string, unknown>> = JSON.parse(
+        fs.readFileSync(path.join(USER_DATA_DIR, "library.json"), "utf8"),
+      );
+      expect(onDisk[0].lastPlayed).toBe(lastPlayed.toISOString());
+
+      const second = await createService();
+      const reloaded = second.getGames().find((g) => g.id === game!.id);
+
+      expect(reloaded?.lastPlayed).toBeInstanceOf(Date);
+      expect(reloaded?.lastPlayed?.getTime()).toBe(lastPlayed.getTime());
+
+      fs.unlinkSync(romPath);
+    });
+
+    it("drops an unparseable lastPlayed instead of loading an Invalid Date", async () => {
+      const romPath = path.join(ROMS_DIR, "bad_last_played.nes");
+      const content = "bad-last-played-content";
+      fs.writeFileSync(romPath, content);
+
+      const gameId = sha256File(romPath);
+      const games = [
+        {
+          id: gameId,
+          lastPlayed: "not a date",
+          romHashes: computeExpectedHashes(content),
+          romPath,
+          system: "Nintendo Entertainment System",
+          systemId: "nes",
+          title: "Bad Date Game",
+        },
+      ];
+      fs.writeFileSync(path.join(USER_DATA_DIR, "library.json"), JSON.stringify(games, null, 2));
+
+      const service = await createService();
+      const [loaded] = service.getGames();
+
+      expect(loaded.lastPlayed).toBeUndefined();
+
+      fs.unlinkSync(romPath);
+    });
   });
 
   // ---------------------------------------------------------------------------
