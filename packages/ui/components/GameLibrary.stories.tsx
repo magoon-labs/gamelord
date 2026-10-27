@@ -110,7 +110,11 @@ export const Default: Story = {
   ],
 };
 
-/** Choosing "Last Played" orders played games most-recent-first, unplayed games last. */
+/**
+ * Choosing "Last Played" orders played games most-recent-first, then unplayed
+ * games by title. The fixture lists unplayed games out of title order so an
+ * inconsistent comparator can't pass by preserving input order.
+ */
 export const SortByLastPlayed: Story = {
   args: {
     games: sampleGames,
@@ -146,13 +150,17 @@ export const SortByLastPlayed: Story = {
     );
 
     await waitFor(() =>
-      expect(cardTitles().slice(0, 3)).toEqual([
+      expect(cardTitles()).toEqual([
         "The Legend of Zelda",
         "Super Mario Bros.",
         "Super Metroid",
+        "Castlevania",
+        "Mega Man X",
+        "Pokemon Red",
+        "Sonic the Hedgehog",
+        "Street Fighter II",
       ]),
     );
-    await expect(cardTitles()).toHaveLength(sampleGames.length);
   },
 };
 
