@@ -297,7 +297,7 @@ export class GameWindowManager extends EventEmitter {
         gameWindowLog.warn("Worker shutdown after window close failed:", error);
       });
 
-      this.emit("gameWindowClosed", { gameId: game.id });
+      this.emit("gameWindowClosed", { gameId: game.id, windowId });
     });
 
     this.gameWindows.set(game.id, gameWindow);
@@ -344,9 +344,11 @@ export class GameWindowManager extends EventEmitter {
       gameWindow.webContents.send("game:mode", "overlay");
     });
 
+    const windowId = gameWindow.id;
     gameWindow.on("closed", () => {
       this.stopTracking(game.id);
       this.gameWindows.delete(game.id);
+      this.emit("gameWindowClosed", { gameId: game.id, windowId });
     });
 
     this.gameWindows.set(game.id, gameWindow);

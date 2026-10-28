@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
 import type { IpcMainInvokeEvent, BrowserWindow as BrowserWindowType } from "electron";
 
@@ -161,6 +161,7 @@ let libraryServiceInstance: MockLibraryService;
 let gameWindowManagerInstance: MockGameWindowManager;
 let workerClientInstance: MockWorkerClient;
 let emulatorEmitter: EventEmitter;
+let handlers: IPCHandlers;
 
 const fakeAvInfo = {
   geometry: { baseWidth: 256, baseHeight: 240, maxWidth: 256, maxHeight: 240, aspectRatio: 1.333 },
@@ -250,8 +251,9 @@ beforeEach(() => {
   // Configure GameWindowManager mock constructor
   vi.mocked(GameWindowManager).mockImplementation(function (this: Record<string, unknown>) {
     gameWindowManagerInstance = Object.assign(this, {
-      createNativeGameWindow: vi.fn(),
-      createGameWindow: vi.fn(),
+      // Both return the created BrowserWindow, whose id keys play sessions.
+      createNativeGameWindow: vi.fn(() => ({ id: 0 })),
+      createGameWindow: vi.fn(() => ({ id: 0 })),
       startTrackingRetroArchWindow: vi.fn(),
     }) as unknown as MockGameWindowManager;
     gameWindowManagerInstance.on = vi.fn(() => gameWindowManagerInstance);
@@ -286,7 +288,7 @@ beforeEach(() => {
   } as unknown as () => CheatPersistenceService);
 
   // Instantiate IPCHandlers — triggers all handler registrations
-  new IPCHandlers("/fake/preload.js");
+  handlers = new IPCHandlers("/fake/preload.js");
 });
 
 // ---------------------------------------------------------------------------
@@ -624,6 +626,274 @@ describe("IPCHandlers", () => {
         const result = await getHandler("emulator:launch")(fakeEvent, "/roms/smb.nes", "nes");
 
         expect(result).toEqual({ success: true });
+      });
+    });
+
+    describe("playTime", () => {
+      const otherGame: Game = {
+        ...fakeGame,
+        id: "game-2",
+        title: "Tetris",
+        romPath: "/roms/tetris.nes",
+      };
+
+      const nativeCoreMock = (hasAutoSave = false) => ({
+        hasAutoSave: vi.fn(() => hasAutoSave),
+        deleteAutoSave: vi.fn(),
+        getCorePath: vi.fn(() => "/cores/fceumm.dylib"),
+        getRomPath: vi.fn(() => "/roms/smb.nes"),
+        getSystemDir: vi.fn(() => "/bios"),
+        getSaveDir: vi.fn(() => "/saves"),
+        getSramDir: vi.fn(() => "/saves"),
+        getSaveStatesDir: vi.fn(() => "/savestates"),
+      });
+
+      /** Library games by id; `getGame` reads the live object like the real service. */
+      let library: Map<string, Game>;
+
+      const setUpNativeLaunch = (...games: Array<Game>) => {
+        library = new Map(games.map((g) => [g.id, { ...g }]));
+        libraryServiceInstance.getGames.mockImplementation(() => [...library.values()]);
+        libraryServiceInstance.getGame = vi.fn((id: string) => library.get(id));
+        libraryServiceInstance.updateGame.mockImplementation(
+          async (id: string, updates: Partial<Game>) => {
+            const game = library.get(id);
+            if (game) {
+              Object.assign(game, updates);
+            }
+          },
+        );
+        emulatorManagerInstance.launchGame.mockResolvedValue(undefined);
+        emulatorManagerInstance.isNativeMode.mockReturnValue(true);
+        emulatorManagerInstance.getCurrentEmulator.mockReturnValue(nativeCoreMock());
+      };
+
+      /** Launch a game whose native window gets the given BrowserWindow id. */
+      const launch = async (game: Game, windowId: number) => {
+        gameWindowManagerInstance.createNativeGameWindow.mockReturnValueOnce({ id: windowId });
+        return getHandler("emulator:launch")(fakeEvent, game.romPath, "nes");
+      };
+
+      /** Simulate GameWindowManager reporting a closed game window. */
+      const closeWindow = (gameId: string, windowId: number) => {
+        const call = gameWindowManagerInstance.on.mock.calls.find(
+          ([event]) => event === "gameWindowClosed",
+        );
+        if (!call) {
+          throw new Error("No gameWindowClosed listener registered");
+        }
+        (call[1] as (data: { gameId: string; windowId: number }) => void)({ gameId, windowId });
+      };
+
+      const playTimeWrites = () =>
+        libraryServiceInstance.updateGame.mock.calls.filter(
+          ([, updates]) => (updates as Partial<Game>).playTime !== undefined,
+        );
+
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("adds a 90 s session to a game that has never been played", async () => {
+        setUpNativeLaunch(fakeGame);
+
+        await launch(fakeGame, 1);
+        vi.advanceTimersByTime(90_000);
+        closeWindow("game-1", 1);
+
+        await vi.waitFor(() =>
+          expect(libraryServiceInstance.updateGame).toHaveBeenCalledWith("game-1", {
+            playTime: 90,
+          }),
+        );
+      });
+
+      it("adds a 90 s session on top of existing playTime", async () => {
+        setUpNativeLaunch({ ...fakeGame, playTime: 3600 });
+
+        await launch(fakeGame, 1);
+        vi.advanceTimersByTime(90_000);
+        closeWindow("game-1", 1);
+
+        await vi.waitFor(() =>
+          expect(libraryServiceInstance.updateGame).toHaveBeenCalledWith("game-1", {
+            playTime: 3690,
+          }),
+        );
+      });
+
+      it("broadcasts the new playTime total so the library view updates in place", async () => {
+        setUpNativeLaunch({ ...fakeGame, playTime: 10 });
+        const send = vi.fn();
+        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+          { webContents: { send } } as unknown as BrowserWindowType,
+        ]);
+
+        await launch(fakeGame, 1);
+        vi.advanceTimersByTime(90_000);
+        closeWindow("game-1", 1);
+
+        await vi.waitFor(() =>
+          expect(send).toHaveBeenCalledWith("library:gameUpdated", {
+            gameId: "game-1",
+            updates: { playTime: 100 },
+          }),
+        );
+      });
+
+      it("rounds down to whole seconds", async () => {
+        setUpNativeLaunch(fakeGame);
+
+        await launch(fakeGame, 1);
+        vi.advanceTimersByTime(90_999);
+        closeWindow("game-1", 1);
+
+        await vi.waitFor(() =>
+          expect(libraryServiceInstance.updateGame).toHaveBeenCalledWith("game-1", {
+            playTime: 90,
+          }),
+        );
+      });
+
+      it("adds nothing for a session shorter than one second", async () => {
+        setUpNativeLaunch(fakeGame);
+
+        await launch(fakeGame, 1);
+        vi.advanceTimersByTime(999);
+        closeWindow("game-1", 1);
+        await vi.runAllTimersAsync();
+
+        expect(playTimeWrites()).toHaveLength(0);
+      });
+
+      it("adds nothing when the resume dialog is cancelled", async () => {
+        setUpNativeLaunch(fakeGame);
+        emulatorManagerInstance.getCurrentEmulator.mockReturnValue(nativeCoreMock(true));
+        const send = vi.fn((channel: string, payload: { requestId: string }) => {
+          if (channel === "dialog:showResumeGame") {
+            getOnListener("dialog:resumeGameResponse")({}, payload.requestId, {
+              action: "cancel",
+              remember: false,
+            });
+          }
+        });
+        vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue({
+          webContents: { send },
+        } as unknown as BrowserWindowType);
+
+        const result = await launch(fakeGame, 1);
+        vi.advanceTimersByTime(90_000);
+        closeWindow("game-1", 1);
+        await vi.runAllTimersAsync();
+
+        expect(result).toEqual({ success: false, error: "cancelled" });
+        expect(playTimeWrites()).toHaveLength(0);
+      });
+
+      it("adds nothing when the core fails to initialize", async () => {
+        setUpNativeLaunch(fakeGame);
+        vi.mocked(EmulationWorkerClient).mockImplementationOnce(function (
+          this: Record<string, unknown>,
+        ) {
+          Object.assign(this, { init: vi.fn().mockRejectedValue(new Error("Core crashed")) });
+          return this as unknown as EmulationWorkerClient;
+        } as unknown as () => EmulationWorkerClient);
+
+        const result = await launch(fakeGame, 1);
+        vi.advanceTimersByTime(90_000);
+        closeWindow("game-1", 1);
+        await vi.runAllTimersAsync();
+
+        expect(result).toEqual({ success: false, error: "Core crashed" });
+        expect(playTimeWrites()).toHaveLength(0);
+      });
+
+      it("records overlapping sessions of different games independently", async () => {
+        setUpNativeLaunch(fakeGame, { ...otherGame, playTime: 5 });
+
+        await launch(fakeGame, 1); // t = 0
+        vi.advanceTimersByTime(30_000);
+        await launch(otherGame, 2); // t = 30
+        vi.advanceTimersByTime(60_000);
+        closeWindow("game-1", 1); // t = 90: game-1 played 90 s
+        vi.advanceTimersByTime(45_000);
+        closeWindow("game-2", 2); // t = 135: game-2 played 105 s
+
+        await vi.waitFor(() => expect(playTimeWrites()).toHaveLength(2));
+        expect(libraryServiceInstance.updateGame).toHaveBeenCalledWith("game-1", {
+          playTime: 90,
+        });
+        expect(libraryServiceInstance.updateGame).toHaveBeenCalledWith("game-2", {
+          playTime: 110,
+        });
+      });
+
+      it("does not let a relaunched game's old window end the new session", async () => {
+        setUpNativeLaunch(fakeGame);
+
+        await launch(fakeGame, 1); // t = 0
+        vi.advanceTimersByTime(90_000);
+        await launch(fakeGame, 2); // t = 90: relaunch replaces window 1
+        closeWindow("game-1", 1); // old window finishes closing
+        vi.advanceTimersByTime(60_000);
+        closeWindow("game-1", 2); // t = 150
+
+        await vi.waitFor(() => expect(playTimeWrites()).toHaveLength(2));
+        expect(playTimeWrites().map(([, updates]) => updates)).toEqual([
+          { playTime: 90 },
+          { playTime: 150 },
+        ]);
+      });
+
+      it("records sessions in legacy overlay mode", async () => {
+        setUpNativeLaunch(fakeGame);
+        emulatorManagerInstance.isNativeMode.mockReturnValue(false);
+        gameWindowManagerInstance.createGameWindow.mockReturnValueOnce({ id: 7 });
+
+        await getHandler("emulator:launch")(fakeEvent, "/roms/smb.nes", "nes", "retroarch");
+        vi.advanceTimersByTime(90_000);
+        closeWindow("game-1", 7);
+
+        await vi.waitFor(() =>
+          expect(libraryServiceInstance.updateGame).toHaveBeenCalledWith("game-1", {
+            playTime: 90,
+          }),
+        );
+      });
+
+      it("persists a session still open at quit before the final library flush", async () => {
+        setUpNativeLaunch(fakeGame);
+        emulatorManagerInstance.prepareForQuit = vi.fn();
+        emulatorManagerInstance.stopEmulator.mockResolvedValue(undefined);
+        libraryServiceInstance.flushSave = vi.fn().mockResolvedValue(undefined);
+
+        await launch(fakeGame, 1);
+        vi.advanceTimersByTime(90_000);
+        await handlers.cleanup();
+
+        expect(libraryServiceInstance.updateGame).toHaveBeenCalledWith("game-1", {
+          playTime: 90,
+        });
+        const playTimeCall = libraryServiceInstance.updateGame.mock.calls.findIndex(
+          ([, updates]) => (updates as Partial<Game>).playTime !== undefined,
+        );
+        expect(
+          libraryServiceInstance.updateGame.mock.invocationCallOrder[playTimeCall],
+        ).toBeLessThan(
+          (libraryServiceInstance.flushSave as ReturnType<typeof vi.fn>).mock
+            .invocationCallOrder[0],
+        );
+
+        // The window is destroyed after cleanup during quit; that late close
+        // must not count the session a second time.
+        vi.advanceTimersByTime(5000);
+        closeWindow("game-1", 1);
+        await vi.runAllTimersAsync();
+        expect(playTimeWrites()).toHaveLength(1);
       });
     });
   });
