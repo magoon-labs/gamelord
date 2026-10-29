@@ -188,6 +188,10 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
         break;
       case "lastPlayed":
         filtered = [...filtered].sort((a, b) => {
+          // Never-played games go last, ordered by title among themselves
+          if (!a.lastPlayed && !b.lastPlayed) {
+            return a.title.localeCompare(b.title);
+          }
           if (!a.lastPlayed) {
             return 1;
           }
