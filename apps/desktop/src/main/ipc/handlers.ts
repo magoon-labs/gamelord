@@ -35,6 +35,11 @@ export class IPCHandlers {
   private cheatPersistenceService: CheatPersistenceService;
   private autoUpdater: AutoUpdaterService | null = null;
   private pendingResumeDialogs = new Map<string, (response: ResumeDialogResponse) => void>();
+  /**
+   * Open play sessions keyed by game window id, so overlapping windows (or a
+   * relaunch whose old window is still closing) are timed independently.
+   */
+  private playSessions = new Map<number, { gameId: string; startedAt: number }>();
   /** Whether the homebrew import check has finished (imported, skipped, or errored). */
   private homebrewDone = false;
   private pendingDisambiguations = new Map<
@@ -159,6 +164,7 @@ export class IPCHandlers {
           // Launch the emulator with optional specific core
           await this.emulatorManager.launchGame(romPath, systemId, emulatorId, undefined, coreName);
 
+          let gameWindow: BrowserWindow;
           if (this.emulatorManager.isNativeMode()) {
             // Native mode: single window, game renders inside BrowserWindow canvas
             const nativeCore = this.emulatorManager.getCurrentEmulator() as LibretroNativeCore;
@@ -268,7 +274,7 @@ export class IPCHandlers {
               ipcLog.warn("Failed to auto-apply cheats:", error);
             });
 
-            this.gameWindowManager.createNativeGameWindow(
+            gameWindow = this.gameWindowManager.createNativeGameWindow(
               game,
               workerClient,
               avInfo,
@@ -285,7 +291,7 @@ export class IPCHandlers {
             );
           } else {
             // Legacy overlay mode: external RetroArch process
-            this.gameWindowManager.createGameWindow(game);
+            gameWindow = this.gameWindowManager.createGameWindow(game);
 
             // Start tracking RetroArch window to overlay our controls
             const pid = this.emulatorManager.getCurrentEmulatorPid();
@@ -296,6 +302,7 @@ export class IPCHandlers {
             }
           }
 
+          this.playSessions.set(gameWindow.id, { gameId: game.id, startedAt: Date.now() });
           await this.recordLastPlayed(game.id);
 
           return { success: true };
@@ -664,9 +671,11 @@ export class IPCHandlers {
     );
 
     // Native mode: game window close doesn't go through EmulatorManager events,
-    // so we listen on GameWindowManager directly to end gameplay mode.
-    this.gameWindowManager.on("gameWindowClosed", () => {
+    // so we listen on GameWindowManager directly to end gameplay mode and the
+    // window's play session.
+    this.gameWindowManager.on("gameWindowClosed", ({ windowId }: { windowId: number }) => {
       this.artworkService.setGameplayActive(false);
+      void this.endPlaySession(windowId);
     });
   }
 
@@ -1010,6 +1019,11 @@ export class IPCHandlers {
     // async shutdown — the utility process can be torn down by Electron
     // before the shutdown handshake completes.
     this.emulatorManager.prepareForQuit();
+
+    // Game windows are only destroyed after cleanup resolves, too late for
+    // their play sessions to be written before the process exits.
+    await Promise.all([...this.playSessions.keys()].map((id) => this.endPlaySession(id)));
+
     await this.emulatorManager.stopEmulator();
 
     // Stop any in-progress artwork sync and flush pending batched library
@@ -1024,11 +1038,42 @@ export class IPCHandlers {
    * A failed write is logged rather than failing a launch that already worked.
    */
   private async recordLastPlayed(gameId: string): Promise<void> {
-    const updates: Partial<Game> = { lastPlayed: new Date() };
+    await this.persistGameUpdate(gameId, { lastPlayed: new Date() });
+  }
+
+  /**
+   * End a window's play session and add its elapsed whole seconds of
+   * wall-clock time to the game's playTime. Sessions under a second, or with
+   * no recorded start (e.g. a failed launch), add nothing.
+   */
+  private async endPlaySession(windowId: number): Promise<void> {
+    const session = this.playSessions.get(windowId);
+    if (!session) {
+      return;
+    }
+    this.playSessions.delete(windowId);
+
+    const elapsedSeconds = Math.floor((Date.now() - session.startedAt) / 1000);
+    const game = this.libraryService.getGame(session.gameId);
+    if (elapsedSeconds < 1 || !game) {
+      return;
+    }
+    await this.persistGameUpdate(session.gameId, {
+      playTime: (game.playTime ?? 0) + elapsedSeconds,
+    });
+  }
+
+  /**
+   * Persist a main-process change to a game and push it to renderer windows
+   * so the library view updates in place. A failed write is logged rather
+   * than thrown, since callers (launch, window close, quit) have already
+   * succeeded at their real job.
+   */
+  private async persistGameUpdate(gameId: string, updates: Partial<Game>): Promise<void> {
     try {
       await this.libraryService.updateGame(gameId, updates);
     } catch (error) {
-      ipcLog.warn("Failed to record lastPlayed:", error);
+      ipcLog.warn(`Failed to record ${Object.keys(updates).join(", ")}:`, error);
       return;
     }
     for (const window of BrowserWindow.getAllWindows()) {
