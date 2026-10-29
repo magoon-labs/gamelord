@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { execSync } from "node:child_process";
 import { config as loadDotenv } from "dotenv";
-import { defineConfig, externalizeDepsPlugin } from "electron-vite";
+import { defineConfig } from "electron-vite";
 import react from "@vitejs/plugin-react";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import type { Plugin } from "vite";
@@ -81,6 +81,10 @@ export default defineConfig({
   main: {
     build: {
       sourcemap: process.env.SENTRY_AUTH_TOKEN ? "hidden" : undefined,
+      // Bundle runtime deps into `out/`. electron-builder only packages
+      // `out/**/*`, and CJS deps like electron-updater can't be named-imported
+      // from the ESM main bundle when left external.
+      externalizeDeps: false,
       rollupOptions: {
         input: {
           index: resolve(__dirname, "src/main.ts"),
@@ -92,8 +96,8 @@ export default defineConfig({
         },
         // `electron` must stay external — it's provided by the runtime. Bundling
         // its npm shim breaks `getElectronPath()` (it reads `path.txt` relative
-        // to its own dir). electron-vite's externalize plugin doesn't reliably
-        // catch it under rolldown-vite, so list it explicitly.
+        // to its own dir). Deps aren't externalized (see `externalizeDeps`),
+        // so list it explicitly.
         external: ["electron", /^electron\/.+/, /\.node$/],
         output: {
           format: "es",
@@ -101,7 +105,7 @@ export default defineConfig({
       },
     },
     define: {
-      // electron-vite 5 + Vite 8 emit the main process as ESM (`.mjs`), where
+      // electron-vite + Vite 8 emit the main process as ESM (`.mjs`), where
       // `__dirname`/`__filename` don't exist. Replace them at build time with
       // the ESM equivalents (Node >= 20.11, which Electron 41 ships) so both
       // our code and bundled CJS deps resolve paths correctly. Don't recreate
@@ -117,11 +121,12 @@ export default defineConfig({
       ),
       "process.env.SENTRY_DSN": JSON.stringify(process.env.SENTRY_DSN ?? ""),
     },
-    plugins: [externalizeDepsPlugin(), ...sentryPlugins()],
+    plugins: [...sentryPlugins()],
   },
   preload: {
     build: {
       sourcemap: process.env.SENTRY_AUTH_TOKEN ? "hidden" : undefined,
+      externalizeDeps: false,
       rollupOptions: {
         input: {
           index: resolve(__dirname, "src/preload.ts"),
@@ -139,7 +144,7 @@ export default defineConfig({
         },
       },
     },
-    plugins: [externalizeDepsPlugin(), ...sentryPlugins()],
+    plugins: [...sentryPlugins()],
   },
   renderer: {
     build: {
