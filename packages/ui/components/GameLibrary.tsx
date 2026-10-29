@@ -83,7 +83,7 @@ export interface GameLibraryProps {
 }
 
 type ViewMode = "grid" | "list";
-type SortBy = "title" | "platform" | "lastPlayed" | "recent";
+type SortBy = "title" | "platform" | "lastPlayed" | "rating" | "recent";
 
 /** Measures the grid container width via ResizeObserver. */
 function useContainerWidth(gridRef: React.RefObject<HTMLDivElement | null>): number {
@@ -199,6 +199,24 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
             return -1;
           }
           return b.lastPlayed.getTime() - a.lastPlayed.getTime();
+        });
+        break;
+      case "rating":
+        filtered = [...filtered].sort((a, b) => {
+          // Highest rated first; unrated games go last. Ties and unrated games
+          // fall through to title order, keeping disc groups consecutive.
+          const ratingA = a.rating ?? -1;
+          const ratingB = b.rating ?? -1;
+          if (ratingA !== ratingB) {
+            return ratingB - ratingA;
+          }
+          const keyA = a.discGroup ?? a.title;
+          const keyB = b.discGroup ?? b.title;
+          const groupCmp = keyA.localeCompare(keyB);
+          if (groupCmp !== 0) {
+            return groupCmp;
+          }
+          return (a.discNumber ?? 0) - (b.discNumber ?? 0);
         });
         break;
       case "recent":
@@ -445,6 +463,7 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
                 <SelectItem value="title">Title</SelectItem>
                 <SelectItem value="platform">Platform</SelectItem>
                 <SelectItem value="lastPlayed">Last Played</SelectItem>
+                <SelectItem value="rating">Rating</SelectItem>
                 <SelectItem value="recent">Recently Added</SelectItem>
               </SelectContent>
             </Select>

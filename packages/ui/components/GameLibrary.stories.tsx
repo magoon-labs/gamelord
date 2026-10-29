@@ -164,6 +164,71 @@ export const SortByLastPlayed: Story = {
   },
 };
 
+/**
+ * Ratings for a subset of `sampleGames` (0–1 scale, as stored from ScreenScraper).
+ * Super Metroid ties The Legend of Zelda but comes later in the fixture, and the
+ * unrated games are listed out of title order, so an inconsistent comparator or a
+ * missing title tiebreak can't pass by preserving input order.
+ */
+const sampleRatings: Record<string, number> = {
+  "The Legend of Zelda": 0.9,
+  "Sonic the Hedgehog": 0.7,
+  "Super Metroid": 0.9,
+  "Mega Man X": 0.85,
+  Castlevania: 0.8,
+};
+
+/**
+ * Choosing "Rating" orders rated games highest-first (ties by title), then
+ * unrated games by title.
+ */
+export const SortByRating: Story = {
+  args: {
+    games: sampleGames.map((game) => ({ ...game, rating: sampleRatings[game.title] })),
+    onPlayGame() {
+      /* storybook action placeholder */
+    },
+  },
+  decorators: [
+    (Story) => (
+      <div className="p-8 bg-background min-h-screen">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cardTitles = () =>
+      canvas
+        .getAllByRole("button", { name: /^Play / })
+        .map((card) => card.getAttribute("aria-label")?.replace(/^Play /, ""));
+
+    // Default sort is by title
+    await expect(cardTitles()[0]).toBe("Castlevania");
+
+    const sortTrigger = canvas
+      .getAllByRole("combobox")
+      .find((trigger) => trigger.textContent === "Title");
+    await expect(sortTrigger).toBeDefined();
+    await userEvent.click(sortTrigger!);
+    // Select content renders in a portal outside the canvas
+    await userEvent.click(await within(document.body).findByRole("option", { name: "Rating" }));
+
+    await waitFor(() =>
+      expect(cardTitles()).toEqual([
+        "Super Metroid",
+        "The Legend of Zelda",
+        "Mega Man X",
+        "Castlevania",
+        "Sonic the Hedgehog",
+        "Pokemon Red",
+        "Street Fighter II",
+        "Super Mario Bros.",
+      ]),
+    );
+  },
+};
+
 export const Empty: Story = {
   args: {
     games: [],

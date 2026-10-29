@@ -23,6 +23,8 @@ export interface Game {
   lastPlayed?: Date;
   platform: string;
   playTime?: number;
+  /** Community rating on a 0–1 scale, when known. */
+  rating?: number;
   romPath: string;
   /** Machine-readable system identifier (e.g. "snes", "nes"). Used for launch. */
   systemId?: string;
