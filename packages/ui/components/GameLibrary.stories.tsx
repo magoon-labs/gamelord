@@ -229,6 +229,161 @@ export const SortByRating: Story = {
   },
 };
 
+/** Sample library plus a game ScreenScraper returned no genre for. */
+const gamesWithUngenred = [
+  ...sampleGames,
+  {
+    id: "9",
+    title: "Tetris",
+    platform: "GB",
+    coverArtAspectRatio: 0.9,
+    romPath: "/roms/tetris.gb",
+  },
+];
+
+/** Reads the visible card titles in grid order. */
+const getCardTitles = (canvasElement: HTMLElement) =>
+  within(canvasElement)
+    .getAllByRole("button", { name: /^Play / })
+    .map((card) => card.getAttribute("aria-label")?.replace(/^Play /, ""));
+
+/** Opens a toolbar Select and picks an option (Select content renders in a portal). */
+const chooseOption = async (trigger: HTMLElement, option: string) => {
+  await userEvent.click(trigger);
+  await userEvent.click(await within(document.body).findByRole("option", { name: option }));
+};
+
+/**
+ * The genre Select lists distinct genres alphabetically and narrows the grid.
+ * It combines with the platform filter, and the active genre gets a removable
+ * chip. Games without a genre (Tetris) only appear under "All Genres". Ends
+ * with the "Action" genre active.
+ */
+export const FilterByGenre: Story = {
+  args: {
+    games: gamesWithUngenred,
+    onPlayGame() {
+      /* storybook action placeholder */
+    },
+  },
+  decorators: [
+    (Story) => (
+      <div className="p-8 bg-background min-h-screen">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cardTitles = () => getCardTitles(canvasElement);
+    const genreTrigger = canvas.getByRole("combobox", { name: "Filter by genre" });
+    const platformTrigger = canvas
+      .getAllByRole("combobox")
+      .find((trigger) => trigger.textContent === "All Platforms");
+    await expect(platformTrigger).toBeDefined();
+
+    await expect(cardTitles()).toHaveLength(9);
+    await expect(cardTitles()).toContain("Tetris");
+
+    // Options: "All Genres" then distinct genres, alphabetically
+    await userEvent.click(genreTrigger);
+    const options = await within(document.body).findAllByRole("option");
+    await expect(options.map((option) => option.textContent)).toEqual([
+      "All Genres",
+      "Action",
+      "Adventure",
+      "Fighting",
+      "Platform",
+      "RPG",
+    ]);
+    await userEvent.click(within(document.body).getByRole("option", { name: "Action" }));
+
+    const actionGames = ["Castlevania", "Mega Man X", "Super Metroid"];
+    await waitFor(() => expect(cardTitles()).toEqual(actionGames));
+    await expect(canvas.getByText("Action ✕")).toBeInTheDocument();
+
+    // Combines with the platform filter
+    await chooseOption(platformTrigger!, "NES");
+    await waitFor(() => expect(cardTitles()).toEqual(["Castlevania"]));
+
+    // Removing the genre chip keeps the platform filter
+    await userEvent.click(canvas.getByText("Action ✕"));
+    await waitFor(() =>
+      expect(cardTitles()).toEqual(["Castlevania", "Super Mario Bros.", "The Legend of Zelda"]),
+    );
+    await expect(genreTrigger).toHaveTextContent("All Genres");
+    await expect(canvas.queryByText("Action ✕")).not.toBeInTheDocument();
+
+    // Re-select the genre, then drop the platform: only Action games remain
+    await chooseOption(genreTrigger, "Action");
+    await userEvent.click(canvas.getByText("NES ✕"));
+    await waitFor(() => expect(cardTitles()).toEqual(actionGames));
+  },
+};
+
+/**
+ * The genre filter ANDs with search and the favorites toggle.
+ */
+export const FilterByGenreWithSearchAndFavorites: Story = {
+  args: {
+    games: gamesWithUngenred.map((game) => ({
+      ...game,
+      favorite: ["Super Metroid", "Castlevania", "Super Mario Bros."].includes(game.title),
+    })),
+    onPlayGame() {
+      /* storybook action placeholder */
+    },
+  },
+  decorators: [
+    (Story) => (
+      <div className="p-8 bg-background min-h-screen">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cardTitles = () => getCardTitles(canvasElement);
+    const searchInput = canvas.getByPlaceholderText("Search games...");
+
+    await chooseOption(canvas.getByRole("combobox", { name: "Filter by genre" }), "Action");
+    await waitFor(() =>
+      expect(cardTitles()).toEqual(["Castlevania", "Mega Man X", "Super Metroid"]),
+    );
+
+    // Genre + search
+    await userEvent.type(searchInput, "Super");
+    await waitFor(() => expect(cardTitles()).toEqual(["Super Metroid"]));
+    await userEvent.clear(searchInput);
+
+    // Genre + favorites
+    await userEvent.click(canvas.getByRole("button", { name: "Show favorites only" }));
+    await waitFor(() => expect(cardTitles()).toEqual(["Castlevania", "Super Metroid"]));
+  },
+};
+
+/** No game has a genre (e.g. artwork never synced), so the genre Select is hidden. */
+export const NoGenres: Story = {
+  args: {
+    games: sampleGames.map(({ genre: _genre, ...game }) => game),
+    onPlayGame() {
+      /* storybook action placeholder */
+    },
+  },
+  decorators: [
+    (Story) => (
+      <div className="p-8 bg-background min-h-screen">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.queryByRole("combobox", { name: "Filter by genre" })).toBeNull();
+    await expect(getCardTitles(canvasElement)).toHaveLength(8);
+  },
+};
+
 export const Empty: Story = {
   args: {
     games: [],
