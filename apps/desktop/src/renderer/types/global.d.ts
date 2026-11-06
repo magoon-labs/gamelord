@@ -194,6 +194,7 @@ export interface GamelordAPI {
   sentryEnabled: boolean;
 
   // Game input (native mode)
+  notifyGameWindowReady: () => void;
   gameInput: (port: number, id: number, pressed: boolean) => void;
   gameInputAnalog: (port: number, index: number, id: number, value: number) => void;
 
