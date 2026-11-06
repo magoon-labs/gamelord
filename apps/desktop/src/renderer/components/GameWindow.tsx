@@ -41,15 +41,8 @@ import {
 import type { Game } from "../../types/library";
 import type { GamelordAPI, VideoFrame } from "../types/global";
 import type { AVInfo } from "../../main/workers/core-worker-protocol";
-import {
-  CTRL_ACTIVE_BUFFER,
-  CTRL_FRAME_SEQUENCE,
-  CTRL_FRAME_WIDTH,
-  CTRL_FRAME_HEIGHT,
-  CTRL_AUDIO_WRITE_POS,
-  CTRL_AUDIO_READ_POS,
-  CTRL_AUDIO_SAMPLE_RATE,
-} from "../../main/workers/shared-frame-protocol";
+import type { FramePortMessage } from "../../main/workers/core-worker-protocol";
+import { GAME_FRAME_PORT_MESSAGE } from "../../types/gameFramePort";
 import { DevBranchBadge } from "./DevBranchBadge";
 import { EmulationErrorDialog } from "./EmulationErrorDialog";
 import { PowerAnimation } from "./animations";
@@ -336,13 +329,6 @@ export const GameWindow: React.FC = () => {
   const lastFrameTimeRef = useRef(0);
   const fpsEmaRef = useRef(0);
   const rafFrameCountRef = useRef(0);
-  // SharedArrayBuffer zero-copy mode refs
-  const controlViewRef = useRef<Int32Array | null>(null);
-  const videoViewRef = useRef<Uint8Array | null>(null);
-  const audioViewRef = useRef<Int16Array | null>(null);
-  const videoBufferSizeRef = useRef(0);
-  const lastRenderedSeqRef = useRef(0);
-  const useSharedBuffersRef = useRef(false);
 
   const [gameAspectRatio, setGameAspectRatio] = useState<number | null>(null);
 
@@ -462,37 +448,6 @@ export const GameWindow: React.FC = () => {
     audioNextTimeRef.current += buffer.duration;
   }, []);
 
-  /** Drain audio samples from the SharedArrayBuffer ring buffer. */
-  const drainAudioRing = useCallback(() => {
-    const ctrl = controlViewRef.current;
-    const ring = audioViewRef.current;
-    if (!ctrl || !ring) {
-      return;
-    }
-
-    const ringLen = ring.length;
-    const writePos = Atomics.load(ctrl, CTRL_AUDIO_WRITE_POS);
-    const readPos = Atomics.load(ctrl, CTRL_AUDIO_READ_POS);
-    const sampleRate = Atomics.load(ctrl, CTRL_AUDIO_SAMPLE_RATE);
-
-    const available = writePos - readPos;
-    if (available <= 0) {
-      return;
-    }
-
-    // Clamp to ring capacity to skip any overwritten samples
-    const toRead = Math.min(available, ringLen);
-    const startPos = writePos - toRead;
-
-    const samples = new Int16Array(toRead);
-    for (let i = 0; i < toRead; i++) {
-      samples[i] = ring[(startPos + i) % ringLen];
-    }
-
-    Atomics.store(ctrl, CTRL_AUDIO_READ_POS, writePos);
-    scheduleAudioChunk(samples, sampleRate);
-  }, [scheduleAudioChunk]);
-
   useEffect(() => {
     // Remove any stale listeners BEFORE registering new ones. This is
     // critical because React Strict Mode (dev) double-mounts components,
@@ -506,34 +461,12 @@ export const GameWindow: React.FC = () => {
     api.removeAllListeners("emulator:paused");
     api.removeAllListeners("emulator:resumed");
     api.removeAllListeners("game:av-info");
-    api.removeAllListeners("game:video-frame");
-    api.removeAllListeners("game:audio-samples");
     api.removeAllListeners("game:prepare-close");
     api.removeAllListeners("game:ready-for-boot");
     api.removeAllListeners("emulator:speedChanged");
     api.removeAllListeners("emulator:discChanged");
     api.removeAllListeners("game:disc-info");
     api.removeAllListeners("game:emulation-error");
-    // Register for SharedArrayBuffer delivery via MessagePort bridge.
-    // The main process sends SABs through a MessagePort because contextBridge
-    // cannot transfer SharedArrayBuffer directly.
-    api.framePort.onMessage((data: unknown) => {
-      const msg = data as {
-        type: string;
-        control: SharedArrayBuffer;
-        video: SharedArrayBuffer;
-        audio: SharedArrayBuffer;
-      };
-      if (msg.type === "sharedBuffers") {
-        controlViewRef.current = new Int32Array(msg.control);
-        videoViewRef.current = new Uint8Array(msg.video);
-        audioViewRef.current = new Int16Array(msg.audio);
-        videoBufferSizeRef.current = msg.video.byteLength / 2; // each buffer is half
-        lastRenderedSeqRef.current = 0;
-        useSharedBuffersRef.current = true;
-      }
-    });
-
     api.on("game:loaded", (raw: unknown) => {
       const gameData = raw as Game;
       setGame(gameData);
@@ -634,8 +567,7 @@ export const GameWindow: React.FC = () => {
       setGameAspectRatio(coreAR > 0 ? coreAR : fallbackAR);
     });
 
-    api.on("game:video-frame", (raw: unknown) => {
-      const frameData = raw as VideoFrame;
+    const handleVideoFrame = (frameData: VideoFrame) => {
       // Buffer the frame immediately so the latest state is always available,
       // but don't initialize the renderer or draw until the boot animation
       // overlay is in place. This prevents the game content from flashing
@@ -683,43 +615,10 @@ export const GameWindow: React.FC = () => {
             }
             lastFrameTimeRef.current = timestamp;
 
-            if (
-              useSharedBuffersRef.current &&
-              controlViewRef.current &&
-              videoViewRef.current &&
-              rendererRef.current
-            ) {
-              // Zero-copy path: read directly from SharedArrayBuffer
-              const ctrl = controlViewRef.current;
-              const seq = Atomics.load(ctrl, CTRL_FRAME_SEQUENCE);
-
-              if (seq !== lastRenderedSeqRef.current) {
-                lastRenderedSeqRef.current = seq;
-                const activeBuffer = Atomics.load(ctrl, CTRL_ACTIVE_BUFFER);
-                const width = Atomics.load(ctrl, CTRL_FRAME_WIDTH);
-                const height = Atomics.load(ctrl, CTRL_FRAME_HEIGHT);
-                const bufSize = videoBufferSizeRef.current;
-                const offset = activeBuffer * bufSize;
-
-                // Uint8Array view into the active buffer region (zero-copy)
-                const frameData = new Uint8Array(
-                  videoViewRef.current.buffer,
-                  offset,
-                  width * height * 4,
-                );
-
-                rendererRef.current.renderFrame({ data: frameData, width, height });
-              }
-
-              // Drain audio from the ring buffer
-              drainAudioRing();
-            } else {
-              // Fallback: render from IPC-buffered frame
-              const frame = pendingFrameRef.current;
-              if (frame && rendererRef.current) {
-                pendingFrameRef.current = null;
-                rendererRef.current.renderFrame(frame);
-              }
+            const frame = pendingFrameRef.current;
+            if (frame && rendererRef.current) {
+              pendingFrameRef.current = null;
+              rendererRef.current.renderFrame(frame);
             }
             rafIdRef.current = requestAnimationFrame(renderLoop);
           };
@@ -729,23 +628,26 @@ export const GameWindow: React.FC = () => {
           return;
         }
       }
-    });
+    };
 
-    // IPC fallback audio path — used when SharedArrayBuffer is unavailable.
-    // When SAB mode is active, audio is drained from the ring buffer in the
-    // rAF loop instead (see drainAudioRing).
-    api.on("game:audio-samples", (audioDataRaw: unknown) => {
-      if (useSharedBuffersRef.current) {
+    // Video and audio arrive on a port connected directly to the worker.
+    let framePort: MessagePort | null = null;
+    const handleFramePortMessage = ({ data }: MessageEvent<FramePortMessage>) => {
+      if (data.type === "videoFrame") {
+        handleVideoFrame(data);
+      } else {
+        scheduleAudioChunk(data.samples, data.sampleRate);
+      }
+    };
+    const handleWindowMessage = (event: MessageEvent) => {
+      if (event.source !== window || event.data !== GAME_FRAME_PORT_MESSAGE) {
         return;
       }
-
-      // audioData.samples arrives as Uint8Array after Electron IPC.
-      // Interpret the raw bytes as interleaved stereo Int16 samples.
-      const audioData = audioDataRaw as { samples: Uint8Array; sampleRate: number };
-      const raw: Uint8Array = audioData.samples;
-      const samples = new Int16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
-      scheduleAudioChunk(samples, audioData.sampleRate);
-    });
+      framePort?.close();
+      [framePort] = event.ports;
+      framePort.onmessage = handleFramePortMessage;
+    };
+    window.addEventListener("message", handleWindowMessage);
 
     // Tell the main process it can send its one-shot startup messages. Deferred
     // so Strict Mode's immediate remount only reports ready once.
@@ -753,14 +655,14 @@ export const GameWindow: React.FC = () => {
 
     return () => {
       clearTimeout(readyTimer);
+      window.removeEventListener("message", handleWindowMessage);
+      framePort?.close();
       api.removeAllListeners("game:loaded");
       api.removeAllListeners("game:mode");
       api.removeAllListeners("overlay:show-controls");
       api.removeAllListeners("emulator:paused");
       api.removeAllListeners("emulator:resumed");
       api.removeAllListeners("game:av-info");
-      api.removeAllListeners("game:video-frame");
-      api.removeAllListeners("game:audio-samples");
       api.removeAllListeners("game:prepare-close");
       api.removeAllListeners("game:ready-for-boot");
       api.removeAllListeners("emulator:speedChanged");
@@ -769,14 +671,6 @@ export const GameWindow: React.FC = () => {
       cancelAnimationFrame(rafIdRef.current);
       pendingFrameRef.current = null;
       bootReadyRef.current = false;
-
-      // Reset SAB state so a fresh init can re-establish the connection
-      useSharedBuffersRef.current = false;
-      controlViewRef.current = null;
-      videoViewRef.current = null;
-      audioViewRef.current = null;
-      videoBufferSizeRef.current = 0;
-      lastRenderedSeqRef.current = 0;
 
       rendererRef.current?.destroy();
       rendererRef.current = null;
