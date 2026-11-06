@@ -3,6 +3,7 @@ import { GameCard, Game, GameCardMenuItem } from "./GameCard";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
+import { GenreFilterSelect } from "./GenreFilterSelect";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Search, Filter, Grid, List, Heart, Disc2 } from "lucide-react";
 import { cn } from "../utils";
@@ -49,6 +50,7 @@ import type { ArtworkSyncStore } from "../hooks/useArtworkSyncStore";
 import { modifierKey } from "../hooks/usePlatform";
 import { ROW_HEIGHT, MOSAIC_GAP, computeCardWidth } from "../utils/mosaicGrid";
 import { computeRowLayout } from "../utils/mosaicLayout";
+import { ALL_GENRES, filterByGenre, getGenres } from "../utils/genreFilter";
 
 /** Threshold: lists larger than this use virtualized rendering. */
 const VIRTUALIZATION_THRESHOLD = 100;
@@ -121,6 +123,7 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPlatform, setSelectedPlatform] = useState<string>("all");
+  const [selectedGenre, setSelectedGenre] = useState<string>(ALL_GENRES);
   const [sortBy, setSortBy] = useState<SortBy>("title");
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -133,6 +136,8 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
     const platformSet = new Set(games.map((game) => game.platform));
     return Array.from(platformSet).sort();
   }, [games]);
+
+  const genres = useMemo(() => getGenres(games), [games]);
 
   // Filter and sort games
   const filteredGames = useMemo(() => {
@@ -149,6 +154,9 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
     if (selectedPlatform !== "all") {
       filtered = filtered.filter((game) => game.platform === selectedPlatform);
     }
+
+    // Genre filter
+    filtered = filterByGenre(filtered, selectedGenre);
 
     // Favorites filter
     if (showFavoritesOnly) {
@@ -225,7 +233,7 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
     }
 
     return filtered;
-  }, [games, searchQuery, selectedPlatform, sortBy, showFavoritesOnly]);
+  }, [games, searchQuery, selectedPlatform, selectedGenre, sortBy, showFavoritesOnly]);
 
   // Build display items: real games interspersed with placeholder cards for missing discs.
   // Placeholders are purely UI — they don't affect filteredGames (used for FLIP/virtualization keys).
@@ -366,7 +374,7 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
   const [enterGeneration, setEnterGeneration] = useState(0);
 
   useEffect(() => {
-    const filterKey = `${searchQuery}|${selectedPlatform}|${sortBy}|${showFavoritesOnly}`;
+    const filterKey = `${searchQuery}|${selectedPlatform}|${selectedGenre}|${sortBy}|${showFavoritesOnly}`;
     if (filterKey !== prevFilterKeyRef.current) {
       const isInitial = prevFilterKeyRef.current === "";
       prevFilterKeyRef.current = filterKey;
@@ -375,7 +383,15 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
         setEnterGeneration((g) => g + 1);
       }
     }
-  }, [searchQuery, selectedPlatform, sortBy, showFavoritesOnly, isLargeList, scrollContainerRef]);
+  }, [
+    searchQuery,
+    selectedPlatform,
+    selectedGenre,
+    sortBy,
+    showFavoritesOnly,
+    isLargeList,
+    scrollContainerRef,
+  ]);
 
   // Clear entrance animation flag after stagger completes
   const [showEntrance, setShowEntrance] = useState(false);
@@ -455,6 +471,12 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
               </SelectContent>
             </Select>
 
+            <GenreFilterSelect
+              genres={genres}
+              onValueChange={setSelectedGenre}
+              value={selectedGenre}
+            />
+
             <Select onValueChange={(value) => setSortBy(value as SortBy)} value={sortBy}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Sort by" />
@@ -514,6 +536,15 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
                 variant="secondary"
               >
                 {selectedPlatform} ✕
+              </Badge>
+            )}
+            {selectedGenre !== ALL_GENRES && (
+              <Badge
+                className="cursor-pointer"
+                onClick={() => setSelectedGenre(ALL_GENRES)}
+                variant="secondary"
+              >
+                {selectedGenre} ✕
               </Badge>
             )}
             {showFavoritesOnly && (
