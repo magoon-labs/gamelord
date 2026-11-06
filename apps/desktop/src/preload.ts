@@ -104,6 +104,7 @@ contextBridge.exposeInMainWorld("gamelord", {
   tick: () => ipcRenderer.invoke("game:tick"),
 
   // Game input forwarding (native mode)
+  notifyGameWindowReady: () => ipcRenderer.send("game:renderer-ready"),
   gameInput: (port: number, id: number, pressed: boolean) =>
     ipcRenderer.send("game:input", port, id, pressed),
   gameInputAnalog: (port: number, index: number, id: number, value: number) =>
