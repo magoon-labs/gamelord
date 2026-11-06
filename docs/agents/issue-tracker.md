@@ -18,8 +18,8 @@ Infer the repo from `git remote -v` — `gh` does this automatically when run in
 - **Every PR references an issue** — PR body must include `Closes #<n>` or `Fixes #<n>`. If no issue exists for non-trivial work, create one first. See `## Pull Requests` in AGENTS.md.
 - **Branch naming**: `<type>/<short-descriptive-name>` where type is one of `feat | fix | refactor | docs | test | chore`. See `## Git Conventions` in AGENTS.md.
 - **Never push to `main`** — branch protection enforces this. Always open a PR.
-- **Sub-issues for multi-part work**: parent tracking issue + linked sub-issues via the GraphQL `addSubIssue` mutation. See `.claude/rules/github-issues.md`.
-- **Good-first-issue labeling**: check new issues against `.claude/rules/good-first-issues.md` and apply the label at creation time when it qualifies.
+- **Sub-issues for multi-part work**: parent tracking issue + linked sub-issues via the GraphQL `addSubIssue` mutation. See `.agents/rules/github-issues.md`.
+- **Good-first-issue labeling**: check new issues against `.agents/rules/good-first-issues.md` and apply the label at creation time when it qualifies.
 
 ## When a skill says "publish to the issue tracker"
 

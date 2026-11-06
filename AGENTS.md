@@ -35,7 +35,17 @@ Single-context. `CONTEXT.md` + `docs/adr/` live at the repo root if/when they're
 
 ## Detailed Rules
 
-More detailed rules live in `.claude/rules/*.md`. Claude Code and Grok load them automatically. Other agents must read the relevant file before working in that area.
+Detailed rules live in `.agents/rules/`. `.claude/rules` is a symlink to it, so Claude Code and Grok load them automatically. Other agents must read the relevant file before working in that area. Always edit the files in `.agents/rules/`.
+
+- `agent-browser.md`: visually verifying the running app
+- `agent-react-devtools.md`: inspecting React components
+- `dependencies.md`: adding or updating dependencies
+- `design-philosophy.md`, `visual-checkpoints.md`, `shadcn-components.md`, `inspiration-language.md`: UI work and how to describe it
+- `storybook.md`: stories for component states
+- `performance.md`: anything touching the game window or emulation loop
+- `session-start.md`: native addon and worktree setup
+- `issue-first.md`, `github-issues.md`, `good-first-issues.md`, `development-plan.md`: creating and tracking issues
+- `pull-requests.md`, `screenshot-hosting.md`: PR media and review comments
 
 ## Package Manager
 
