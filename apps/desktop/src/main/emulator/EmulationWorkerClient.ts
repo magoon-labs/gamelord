@@ -1,4 +1,4 @@
-import { utilityProcess, UtilityProcess } from "electron";
+import { utilityProcess, UtilityProcess, type MessagePortMain } from "electron";
 import { EventEmitter } from "node:events";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
@@ -14,12 +14,6 @@ import {
   RETRO_LOG_WARN,
   RETRO_LOG_ERROR,
 } from "../workers/core-worker-protocol";
-import {
-  computeVideoBufferSize,
-  CTRL_SAB_BYTE_LENGTH,
-  CTRL_AUDIO_SAMPLE_RATE,
-  AUDIO_RING_BYTE_LENGTH,
-} from "../workers/shared-frame-protocol";
 import { libretroLog } from "../logger";
 
 export interface EmulationWorkerInitOptions {
@@ -59,18 +53,12 @@ const SHUTDOWN_TIMEOUT_MS = 5000;
  * - `audioSamples` — `{ samples: Buffer, sampleRate: number }`
  * - `error` — `{ message: string, fatal: boolean }`
  */
-export interface SharedBuffers {
-  audio: SharedArrayBuffer;
-  control: SharedArrayBuffer;
-  video: SharedArrayBuffer;
-}
 
 export class EmulationWorkerClient extends EventEmitter {
   private workerProcess: UtilityProcess | null = null;
   private pendingRequests = new Map<string, PendingRequest>();
   private running = false;
   private shuttingDown = false;
-  private sharedBuffers: SharedBuffers | null = null;
   private detectedSerial: string | null = null;
 
   /**
@@ -148,10 +136,6 @@ export class EmulationWorkerClient extends EventEmitter {
     this.workerProcess.on("message", (event: WorkerEvent) => {
       this.handleWorkerEvent(event);
     });
-
-    // Allocate SharedArrayBuffers for zero-copy frame/audio transfer.
-    // Falls back to copy-based IPC if SAB is unavailable.
-    this.setupSharedBuffers(avInfo);
 
     this.running = true;
     return { avInfo, saveStatesSupported };
@@ -298,11 +282,12 @@ export class EmulationWorkerClient extends EventEmitter {
   }
 
   /**
-   * Returns the SharedArrayBuffers for zero-copy frame/audio transfer,
-   * or null if SAB mode is not active (allocation failed or unavailable).
+   * Gives the worker a port connected to the game window, so video and audio
+   * reach the renderer without passing through the main process. Replaces any
+   * previous port, which lets a reloaded window reconnect.
    */
-  getSharedBuffers(): SharedBuffers | null {
-    return this.sharedBuffers;
+  attachFramePort(port: MessagePortMain): void {
+    this.workerProcess?.postMessage({ action: "attachFramePort" } satisfies WorkerCommand, [port]);
   }
 
   /**
@@ -317,48 +302,6 @@ export class EmulationWorkerClient extends EventEmitter {
   // -------------------------------------------------------------------------
   // Private
   // -------------------------------------------------------------------------
-
-  private setupSharedBuffers(avInfo: AVInfo): void {
-    try {
-      if (typeof SharedArrayBuffer === "undefined") {
-        return;
-      }
-
-      const videoBufferSize = computeVideoBufferSize(
-        avInfo.geometry.maxWidth,
-        avInfo.geometry.maxHeight,
-        avInfo.geometry.baseWidth,
-        avInfo.geometry.baseHeight,
-      );
-
-      const controlSAB = new SharedArrayBuffer(CTRL_SAB_BYTE_LENGTH);
-      const videoSAB = new SharedArrayBuffer(videoBufferSize * 2); // double buffer
-      const audioSAB = new SharedArrayBuffer(AUDIO_RING_BYTE_LENGTH);
-
-      // Initialize audio sample rate in control buffer
-      const ctrl = new Int32Array(controlSAB);
-      Atomics.store(ctrl, CTRL_AUDIO_SAMPLE_RATE, avInfo.timing.sampleRate || 44_100);
-
-      this.sharedBuffers = { audio: audioSAB, control: controlSAB, video: videoSAB };
-
-      // Send SABs to the worker
-      this.postCommand({
-        action: "setupSharedBuffers",
-        audioSAB,
-        controlSAB,
-        videoBufferSize,
-        videoSAB,
-      });
-
-      libretroLog.info(
-        `SharedArrayBuffer enabled: video=${videoBufferSize * 2} bytes (double-buffered), ` +
-          `audio=${AUDIO_RING_BYTE_LENGTH} bytes (ring buffer)`,
-      );
-    } catch (error) {
-      libretroLog.warn("SharedArrayBuffer unavailable, using copy-based IPC:", error);
-      this.sharedBuffers = null;
-    }
-  }
 
   private postCommand(command: WorkerCommand): void {
     this.workerProcess?.postMessage(command);
@@ -398,21 +341,6 @@ export class EmulationWorkerClient extends EventEmitter {
 
   private handleWorkerEvent(event: WorkerEvent): void {
     switch (event.type) {
-      case "videoFrame":
-        this.emit("videoFrame", {
-          data: event.data,
-          height: event.height,
-          width: event.width,
-        });
-        break;
-
-      case "audioSamples":
-        this.emit("audioSamples", {
-          sampleRate: event.sampleRate,
-          samples: event.samples,
-        });
-        break;
-
       case "error":
         this.emit("error", {
           fatal: event.fatal,
@@ -484,7 +412,6 @@ export class EmulationWorkerClient extends EventEmitter {
     this.workerProcess = null;
     this.running = false;
     this.shuttingDown = false;
-    this.sharedBuffers = null;
     this.detectedSerial = null;
   }
 }
