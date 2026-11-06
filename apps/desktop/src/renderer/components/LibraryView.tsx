@@ -30,7 +30,12 @@ import type { GamelordAPI } from "../types/global";
 import { EmptyLibrary } from "./EmptyLibrary";
 import { useMenuEvents } from "../hooks/useMenuEvents";
 import { useSfx } from "../hooks/useSfx";
-import { isBlockingSyncError, presentSyncError } from "../lib/artworkSyncError";
+import {
+  isBlockingSyncError,
+  presentBlockingSyncError,
+  presentSyncError,
+  type ArtworkSyncErrorPresentation,
+} from "../lib/artworkSyncError";
 
 interface CoreDownloadProgress {
   coreName: string;
@@ -277,6 +282,14 @@ export const LibraryView: React.FC<{
       }
     });
 
+    const showSyncFailure = (presentation: ArtworkSyncErrorPresentation) => {
+      if (presentation.kind === "dialog") {
+        setBlockingSyncError(presentation.errorCode);
+      } else {
+        setSyncNotification({ message: presentation.message, variant: "error" });
+      }
+    };
+
     api.on("artwork:syncComplete", () => {
       setSyncCounter(null);
       loadLibrary();
@@ -297,7 +310,7 @@ export const LibraryView: React.FC<{
             // Clear bad credentials so the dialog reopens on next attempt
             api.artwork.clearCredentials();
           }
-          setBlockingSyncError(blockingErrorCode);
+          showSyncFailure(presentBlockingSyncError(blockingErrorCode));
         } else if (lastErrorCode === "timeout") {
           setSyncNotification({
             message: "Artwork sync stopped: ScreenScraper is not responding. Try again later.",
@@ -336,13 +349,7 @@ export const LibraryView: React.FC<{
       artworkSyncStore.clear();
       syncResults.current = { found: 0, notFound: 0, errors: 0 };
 
-      // Blocking failures need acknowledgement; everything else stays in the banner
-      const presentation = presentSyncError(data.errorCode, data.error);
-      if (presentation.kind === "dialog") {
-        setBlockingSyncError(presentation.errorCode);
-      } else {
-        setSyncNotification({ message: presentation.message, variant: "error" });
-      }
+      showSyncFailure(presentSyncError(data.errorCode, data.error));
     });
 
     return () => {

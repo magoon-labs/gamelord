@@ -13,6 +13,21 @@ export function isBlockingSyncError(
 }
 
 /**
+ * Map a blocking error to its presentation. Missing developer credentials are
+ * only fixable from a source checkout, so other builds get a plain banner
+ * instead of the dialog's `.env` instructions.
+ */
+export function presentBlockingSyncError(
+  errorCode: ArtworkSyncBlockingErrorCode,
+  isDevBuild = process.env.NODE_ENV === "development",
+): ArtworkSyncErrorPresentation {
+  if (errorCode === "config-error" && !isDevBuild) {
+    return { kind: "banner", message: "Artwork sync is unavailable in this build." };
+  }
+  return { errorCode, kind: "dialog" };
+}
+
+/**
  * Map an `artwork:syncError` payload to a dialog (blocking errors) or a
  * banner message (everything else).
  */
@@ -21,7 +36,7 @@ export function presentSyncError(
   error: string,
 ): ArtworkSyncErrorPresentation {
   if (isBlockingSyncError(errorCode)) {
-    return { errorCode, kind: "dialog" };
+    return presentBlockingSyncError(errorCode);
   }
 
   switch (errorCode) {
