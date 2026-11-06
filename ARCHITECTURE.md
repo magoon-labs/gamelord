@@ -5,10 +5,10 @@ GameLord is a native emulator frontend (OpenEmu-style) where Electron handles UI
 ## How It Works
 
 1. **Native addon** (`apps/desktop/native/src/libretro_core.cc`) loads libretro `.dylib` cores directly, implementing the full libretro frontend API (environment callbacks, video/audio/input)
-2. **Utility process** (`core-worker.ts`) runs the emulation loop in a dedicated Electron utility process with hybrid sleep+spin frame pacing (~0.1-0.5ms jitter), sending video frames and audio samples to the main process via `postMessage`
-3. **Main process** forwards frames/audio to the renderer via `webContents.send` with `Buffer`. `EmulationWorkerClient` manages the worker lifecycle and request/response protocol.
-4. **Renderer** displays frames on a `<canvas>` via `putImageData` and plays audio via Web Audio API with seamless chunk scheduling
-5. **Input** is captured in the renderer (keyboard events) and forwarded through the main process to the utility process worker via IPC
+2. **Utility process** (`core-worker.ts`) runs the emulation loop in a dedicated Electron utility process with hybrid sleep+spin frame pacing (~0.1-0.5ms jitter)
+3. **Video and audio** go straight from the worker to the game window over a `MessagePort`, bypassing the main process so its work can't delay them. Main creates the channel when the window reports it's ready, and the preload hands the port to the page with `window.postMessage`, because `contextBridge` would copy every frame. Messages are still copied by structured clone. A `SharedArrayBuffer` can't cross into a utility process, so true zero-copy would need a different mechanism. `EmulationWorkerClient` manages the worker lifecycle and request/response protocol.
+4. **Renderer** buffers the latest frame, then uploads it as a texture and draws it through the multi-pass shader pipeline in `packages/ui/webgl/` on the next `requestAnimationFrame`. Audio plays via Web Audio API with seamless chunk scheduling
+5. **Input** is captured in the renderer (keyboard events and gamepad polling) and forwarded through the main process to the utility process worker via IPC. Unlike video and audio, it can still be delayed by main process work.
 
 ## Key Files
 
@@ -29,12 +29,14 @@ apps/desktop/src/main/
 │   └── EmulatorManager.ts    - Core selection & orchestration
 ├── workers/
 │   ├── core-worker.ts        - Utility process: emulation loop, native addon, frame pacing
-│   └── core-worker-protocol.ts - Shared message types (worker ↔ main)
+│   └── core-worker-protocol.ts - Shared message types (worker ↔ main, worker → game window)
 └── ipc/
     └── handlers.ts           - IPC endpoints
 
 apps/desktop/src/renderer/components/
 └── GameWindow.tsx            - Canvas rendering, audio playback, controls overlay
+
+packages/ui/webgl/            - WebGL renderer and shader presets
 
 apps/desktop/src/preload.ts   - Renderer API bridge
 ```
