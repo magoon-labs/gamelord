@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { execSync } from "node:child_process";
+import { connect } from "node:net";
 import { config as loadDotenv } from "dotenv";
 import { defineConfig } from "electron-vite";
 import react from "@vitejs/plugin-react";
@@ -73,6 +74,59 @@ function devGitInfoPlugin(): Plugin {
       if (result !== code) {
         return { code: result, map: null };
       }
+    },
+  };
+}
+
+/** Resolves whether something accepts TCP connections on the local port. */
+function isLocalPortOpen(port: number, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect({ host: "localhost", port, timeout: timeoutMs });
+    const settle = (isOpen: boolean) => {
+      socket.destroy();
+      resolve(isOpen);
+    };
+    socket.once("connect", () => settle(true));
+    socket.once("timeout", () => settle(false));
+    socket.once("error", () => settle(false));
+  });
+}
+
+/**
+ * Loads `agent-react-devtools/connect` in the library window only while its
+ * daemon is listening. The module always opens a WebSocket, and Chromium logs a
+ * failed handshake in a way JS can't suppress, so a plain `pnpm dev` must not
+ * load it. The port is probed per request, so a daemon started after the app
+ * connects on the next window reload.
+ */
+function agentReactDevtoolsPlugin(): Plugin {
+  const connectModule = "agent-react-devtools/connect";
+
+  return {
+    name: "agent-react-devtools-when-listening",
+    apply: "serve",
+    config() {
+      // Vite's dependency scan reads the HTML on disk, so it can't see the
+      // injected import. Pre-bundle it to avoid a reload when it first loads.
+      return { optimizeDeps: { include: [connectModule] } };
+    },
+    transformIndexHtml: {
+      // Must run before Vite's own HTML transform, which rewrites the bare
+      // import in the inline script below.
+      order: "pre",
+      async handler(_html, ctx) {
+        if (ctx.path !== "/index.html" || !(await isLocalPortOpen(8097, 100))) {
+          return [];
+        }
+        return [
+          {
+            tag: "script",
+            attrs: { type: "module" },
+            children: `import "${connectModule}";`,
+            injectTo: "head-prepend",
+          },
+        ];
+      },
     },
   };
 }
@@ -159,7 +213,7 @@ export default defineConfig({
     optimizeDeps: {
       exclude: ["@gamelord/ui"],
     },
-    plugins: [react(), devGitInfoPlugin(), ...sentryPlugins()],
+    plugins: [react(), devGitInfoPlugin(), agentReactDevtoolsPlugin(), ...sentryPlugins()],
     resolve: {
       // Ensure pnpm workspace symlinks (e.g. @gamelord/ui → packages/ui)
       // resolve to their real paths, so Node module resolution walks up from
