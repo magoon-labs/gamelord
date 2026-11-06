@@ -15,6 +15,8 @@ import {
   CommandPalette,
   cn,
   ArtworkSyncStore,
+  ArtworkSyncErrorDialog,
+  type ArtworkSyncBlockingErrorCode,
   type Game,
   type Game as UiGame,
   type GameCardMenuItem,
@@ -28,6 +30,12 @@ import type { GamelordAPI } from "../types/global";
 import { EmptyLibrary } from "./EmptyLibrary";
 import { useMenuEvents } from "../hooks/useMenuEvents";
 import { useSfx } from "../hooks/useSfx";
+import {
+  isBlockingSyncError,
+  presentBlockingSyncError,
+  presentSyncError,
+  type ArtworkSyncErrorPresentation,
+} from "../lib/artworkSyncError";
 
 interface CoreDownloadProgress {
   coreName: string;
@@ -77,6 +85,8 @@ export const LibraryView: React.FC<{
     errors: number;
     lastErrorCode?: string;
     lastError?: string;
+    /** First auth/config failure; sticks so later per-game errors can't mask it. */
+    blockingErrorCode?: ArtworkSyncBlockingErrorCode;
   }>({ found: 0, notFound: 0, errors: 0 });
   const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
   const [credentialUserId, setCredentialUserId] = useState("");
@@ -89,6 +99,10 @@ export const LibraryView: React.FC<{
     message: string;
     variant: "error" | "warning" | "success";
   } | null>(null);
+  /** Blocking sync failure (auth/config) shown in a modal instead of the banner. */
+  const [blockingSyncError, setBlockingSyncError] = useState<ArtworkSyncBlockingErrorCode | null>(
+    null,
+  );
 
   // Game options menu state
   const [optionsMenuGame, setOptionsMenuGame] = useState<AppGame | null>(null);
@@ -262,37 +276,41 @@ export const LibraryView: React.FC<{
         syncResults.current.errors++;
         syncResults.current.lastErrorCode = progress.errorCode;
         syncResults.current.lastError = progress.error;
+        if (isBlockingSyncError(progress.errorCode)) {
+          syncResults.current.blockingErrorCode ??= progress.errorCode;
+        }
       }
     });
+
+    const showSyncFailure = (presentation: ArtworkSyncErrorPresentation) => {
+      if (presentation.kind === "dialog") {
+        setBlockingSyncError(presentation.errorCode);
+      } else {
+        setSyncNotification({ message: presentation.message, variant: "error" });
+      }
+    };
 
     api.on("artwork:syncComplete", () => {
       setSyncCounter(null);
       loadLibrary();
 
       // Show summary notification
-      const { found, notFound, errors, lastErrorCode, lastError } = syncResults.current;
+      const { found, notFound, errors, lastErrorCode, lastError, blockingErrorCode } =
+        syncResults.current;
       const total = found + notFound + errors;
       if (total > 0) {
         const hasError =
-          lastErrorCode === "config-error" ||
-          lastErrorCode === "auth-failed" ||
+          blockingErrorCode !== undefined ||
           lastErrorCode === "timeout" ||
           lastErrorCode === "rate-limited" ||
           errors > 0;
         playSfxRef.current(hasError ? "error" : "syncComplete");
-        if (lastErrorCode === "config-error") {
-          setSyncNotification({
-            message: "Artwork sync stopped: developer credentials are missing from the .env file.",
-            variant: "error",
-          });
-        } else if (lastErrorCode === "auth-failed") {
-          // Clear bad credentials so the dialog reopens on next attempt
-          api.artwork.clearCredentials();
-          setSyncNotification({
-            message:
-              'Artwork sync stopped: invalid ScreenScraper credentials. Click "Download Artwork" to update your account.',
-            variant: "error",
-          });
+        if (blockingErrorCode) {
+          if (blockingErrorCode === "auth-failed") {
+            // Clear bad credentials so the dialog reopens on next attempt
+            api.artwork.clearCredentials();
+          }
+          showSyncFailure(presentBlockingSyncError(blockingErrorCode));
         } else if (lastErrorCode === "timeout") {
           setSyncNotification({
             message: "Artwork sync stopped: ScreenScraper is not responding. Try again later.",
@@ -331,33 +349,7 @@ export const LibraryView: React.FC<{
       artworkSyncStore.clear();
       syncResults.current = { found: 0, notFound: 0, errors: 0 };
 
-      // Show actionable error to the user based on structured error code
-      let message: string;
-      switch (data.errorCode) {
-        case "config-error":
-          message = "Artwork sync failed: developer credentials are missing from the .env file.";
-          break;
-        case "auth-failed":
-          message =
-            "Artwork sync failed: invalid credentials. Please update your ScreenScraper account settings.";
-          break;
-        case "rate-limited":
-          message =
-            "Artwork sync failed: ScreenScraper is rate limiting requests. Try again later.";
-          break;
-        case "timeout":
-          message = "Artwork sync failed: ScreenScraper is not responding. Try again later.";
-          break;
-        case "network-error":
-          message =
-            "Artwork sync failed: could not connect to ScreenScraper. Check your internet connection.";
-          break;
-        default:
-          message = `Artwork sync failed: ${data.error}`;
-          break;
-      }
-
-      setSyncNotification({ message, variant: "error" });
+      showSyncFailure(presentSyncError(data.errorCode, data.error));
     });
 
     return () => {
@@ -1028,6 +1020,20 @@ export const LibraryView: React.FC<{
           void handlePlayUiGame(game);
         }}
         actions={allPaletteActions}
+      />
+
+      {/* Blocking artwork sync failure */}
+      <ArtworkSyncErrorDialog
+        errorCode={blockingSyncError}
+        onDismiss={() => {
+          playSfx("dialogClose");
+          setBlockingSyncError(null);
+        }}
+        onUpdateCredentials={() => {
+          playSfx("click");
+          setBlockingSyncError(null);
+          setShowCredentialsDialog(true);
+        }}
       />
 
       {/* ScreenScraper credentials dialog */}
