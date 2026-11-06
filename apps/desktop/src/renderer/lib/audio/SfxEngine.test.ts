@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 
-// We need to mock AudioContext and related APIs before importing SfxEngine,
-// since the module creates a singleton on import that eagerly initializes.
+// AudioContext and related APIs are mocked before each import of SfxEngine.
+// The module creates a singleton on import, so every test gets a fresh one.
 
 function createMockAudioBuffer(): AudioBuffer {
   return {
@@ -66,9 +66,19 @@ describe("SfxEngine", () => {
     setupGlobalMocks();
   });
 
+  // Each test's singleton outlives vi.resetModules(), so consume its one-shot
+  // gesture listener here to stop it reacting to the next test's gestures.
+  afterEach(() => {
+    userGesture();
+  });
+
   async function importFreshEngine() {
     const mod = await import("./SfxEngine");
     return mod.sfxEngine;
+  }
+
+  function userGesture(type: "keydown" | "pointerdown" = "pointerdown") {
+    window.dispatchEvent(new Event(type));
   }
 
   it("reads default preferences (enabled=true, volume=0.5)", async () => {
@@ -87,9 +97,113 @@ describe("SfxEngine", () => {
     expect(prefs.volume).toBe(0.8);
   });
 
-  it("creates AudioContext eagerly at construction", async () => {
-    await importFreshEngine();
-    expect(AudioContext).toHaveBeenCalledTimes(1);
+  describe("lazy AudioContext creation", () => {
+    it("creates nothing on import", async () => {
+      await importFreshEngine();
+      expect(AudioContext).not.toHaveBeenCalled();
+    });
+
+    it.each(["pointerdown", "keydown"] as const)("creates it on the first %s", async (type) => {
+      await importFreshEngine();
+      expect(AudioContext).not.toHaveBeenCalled();
+      userGesture(type);
+      expect(AudioContext).toHaveBeenCalledTimes(1);
+    });
+
+    it("creates it only once across repeated gestures", async () => {
+      await importFreshEngine();
+      userGesture("pointerdown");
+      userGesture("keydown");
+      userGesture("pointerdown");
+      expect(AudioContext).toHaveBeenCalledTimes(1);
+    });
+
+    it("creates it on the first play() when no gesture came first", async () => {
+      const engine = await importFreshEngine();
+      expect(AudioContext).not.toHaveBeenCalled();
+      engine.play("click");
+      expect(AudioContext).toHaveBeenCalledTimes(1);
+      expect(mockSourceNode.start).toHaveBeenCalledWith(0);
+    });
+
+    it("cancels the pending gesture listener once play() has created it", async () => {
+      const engine = await importFreshEngine();
+      engine.play("click");
+      userGesture();
+      expect(AudioContext).toHaveBeenCalledTimes(1);
+    });
+
+    it("creates none when disabled at load, even after gestures and play()", async () => {
+      localStorage.setItem("gamelord:sfx-enabled", "false");
+      const engine = await importFreshEngine();
+      userGesture("pointerdown");
+      userGesture("keydown");
+      engine.play("click");
+      expect(AudioContext).not.toHaveBeenCalled();
+      expect(mockSourceNode.start).not.toHaveBeenCalled();
+    });
+
+    it("creates none after being disabled while a gesture listener is pending", async () => {
+      const engine = await importFreshEngine();
+      engine.setEnabled(false);
+      userGesture();
+      engine.play("click");
+      expect(AudioContext).not.toHaveBeenCalled();
+    });
+
+    it("creates it on the next gesture after setEnabled(true)", async () => {
+      localStorage.setItem("gamelord:sfx-enabled", "false");
+      const engine = await importFreshEngine();
+      userGesture();
+      engine.setEnabled(true);
+      expect(AudioContext).not.toHaveBeenCalled();
+      userGesture();
+      expect(AudioContext).toHaveBeenCalledTimes(1);
+    });
+
+    it("creates it on the next play() after setEnabled(true)", async () => {
+      localStorage.setItem("gamelord:sfx-enabled", "false");
+      const engine = await importFreshEngine();
+      engine.setEnabled(true);
+      engine.play("toggleOn");
+      expect(AudioContext).toHaveBeenCalledTimes(1);
+      userGesture();
+      expect(AudioContext).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the existing context when toggled off and back on", async () => {
+      const engine = await importFreshEngine();
+      userGesture();
+      engine.setEnabled(false);
+      engine.setEnabled(true);
+      userGesture();
+      engine.play("click");
+      expect(AudioContext).toHaveBeenCalledTimes(1);
+      expect(mockSourceNode.start).toHaveBeenCalledWith(0);
+    });
+
+    it("does not create it for preference changes alone", async () => {
+      const engine = await importFreshEngine();
+      engine.setVolume(0.2);
+      engine.getPreferences();
+      engine.subscribe(() => {})();
+      expect(AudioContext).not.toHaveBeenCalled();
+    });
+
+    it("applies the stored volume once created", async () => {
+      localStorage.setItem("gamelord:sfx-volume", "0.8");
+      await importFreshEngine();
+      userGesture();
+      expect(mockGainNode.gain.value).toBe(0.8);
+    });
+
+    it("applies a volume set before creation", async () => {
+      const engine = await importFreshEngine();
+      engine.setVolume(0.25);
+      expect(mockGainNode.gain.value).toBe(1); // untouched mock default
+      engine.play("click");
+      expect(mockGainNode.gain.value).toBe(0.25);
+    });
   });
 
   it("play() is a no-op when disabled", async () => {
@@ -122,6 +236,7 @@ describe("SfxEngine", () => {
 
   it("setVolume persists to localStorage and updates gain", async () => {
     const engine = await importFreshEngine();
+    userGesture();
     engine.setVolume(0.75);
     expect(localStorage.getItem("gamelord:sfx-volume")).toBe("0.75");
     expect(engine.getPreferences().volume).toBe(0.75);
@@ -157,7 +272,7 @@ describe("SfxEngine", () => {
     engine.play("click");
     engine.play("toggleOn");
     engine.play("saveState");
-    // Only the one from construction — play() doesn't create new ones
+    // Only the one from the first play() — later plays don't create new ones
     expect(AudioContext).toHaveBeenCalledTimes(1);
   });
 });
