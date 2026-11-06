@@ -1666,8 +1666,15 @@ export const GameWindow: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      playSfx(sfxPreferences.enabled ? "toggleOff" : "toggleOn");
-                      setSfxEnabled(!sfxPreferences.enabled);
+                      if (sfxPreferences.enabled) {
+                        playSfx("toggleOff");
+                        setSfxEnabled(false);
+                      } else {
+                        // Enable first so this click, not a later gameplay
+                        // keypress, pays to create the AudioContext.
+                        setSfxEnabled(true);
+                        playSfx("toggleOn");
+                      }
                     }}
                     className="w-full flex items-center justify-between px-4 py-2 text-sm text-white/80 hover:bg-white/10 transition-colors"
                   >
