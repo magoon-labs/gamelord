@@ -149,7 +149,7 @@ describe("DisplayLock with jittery timestamps", () => {
       seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31;
       return (seed / 2 ** 31 - 0.5) * 4; // ±2 ms, like a software rAF timer
     };
-    const rates: number[] = [];
+    const rates: Array<number> = [];
     for (let i = 0; i < 2000; i++) {
       const t = 1_000_000 + i * period + jitter();
       lock.onVsync(t, false);
