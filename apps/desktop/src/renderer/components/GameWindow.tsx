@@ -747,7 +747,12 @@ export const GameWindow: React.FC = () => {
       scheduleAudioChunk(samples, audioData.sampleRate);
     });
 
+    // Tell the main process it can send its one-shot startup messages. Deferred
+    // so Strict Mode's immediate remount only reports ready once.
+    const readyTimer = setTimeout(() => api.notifyGameWindowReady(), 0);
+
     return () => {
+      clearTimeout(readyTimer);
       api.removeAllListeners("game:loaded");
       api.removeAllListeners("game:mode");
       api.removeAllListeners("overlay:show-controls");
