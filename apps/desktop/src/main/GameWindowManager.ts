@@ -146,6 +146,12 @@ export class GameWindowManager extends EventEmitter {
     const startup = createGameWindowStartup({
       hasHeroTransition,
       sendInitialState: () => {
+        // Connect the worker straight to this window, so main process work
+        // can't delay video and audio.
+        const { port1, port2 } = new MessageChannelMain();
+        workerClient.attachFramePort(port1);
+        gameWindow.webContents.postMessage("game:frame-port", null, [port2]);
+
         gameWindow.webContents.send("game:loaded", game);
         gameWindow.webContents.send("game:mode", "native");
         gameWindow.webContents.send("game:av-info", avInfo);
@@ -189,45 +195,6 @@ export class GameWindowManager extends EventEmitter {
     }
 
     this.activeWorkerClient = workerClient;
-
-    // Set up zero-copy frame transfer via SharedArrayBuffer + MessagePort.
-    // The main process creates a MessageChannel and sends one port to the
-    // renderer via webContents.postMessage (which supports port transfer,
-    // unlike webContents.send). The SABs are then sent through that port.
-    const sharedBuffers = workerClient.getSharedBuffers();
-    if (sharedBuffers) {
-      const { port1, port2 } = new MessageChannelMain();
-      gameWindow.webContents.on("did-finish-load", () => {
-        if (gameWindow.isDestroyed()) {
-          return;
-        }
-        gameWindow.webContents.postMessage("game:shared-frame-port", null, [port2]);
-
-        // Send SABs through the port after a microtask delay to ensure
-        // the renderer's port.onmessage handler is registered.
-        port1.start();
-        port1.postMessage({
-          type: "sharedBuffers",
-          control: sharedBuffers.control,
-          video: sharedBuffers.video,
-          audio: sharedBuffers.audio,
-        });
-      });
-    }
-
-    // Forward video frames from worker to renderer (fallback when SAB is not active)
-    workerClient.on("videoFrame", (frame: { data: Buffer; width: number; height: number }) => {
-      if (!gameWindow.isDestroyed()) {
-        gameWindow.webContents.send("game:video-frame", frame);
-      }
-    });
-
-    // Forward audio samples from worker to renderer
-    workerClient.on("audioSamples", (audio: { samples: Buffer; sampleRate: number }) => {
-      if (!gameWindow.isDestroyed()) {
-        gameWindow.webContents.send("game:audio-samples", audio);
-      }
-    });
 
     // Forward fatal errors to renderer
     workerClient.on("error", (err: { message: string; fatal: boolean }) => {

@@ -1,3 +1,4 @@
+import type { MessagePortMain } from "electron";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EmulationWorkerClient } from "./EmulationWorkerClient";
 import type { WorkerEvent, AVInfo } from "../workers/core-worker-protocol";
@@ -274,42 +275,6 @@ describe("EmulationWorkerClient", () => {
       await initPromise;
     });
 
-    it("emits videoFrame events from worker", () => {
-      const handler = vi.fn();
-      client.on("videoFrame", handler);
-
-      const frameData = Buffer.alloc(256 * 240 * 4);
-      emitWorkerMessage({
-        type: "videoFrame",
-        data: frameData,
-        width: 256,
-        height: 240,
-      });
-
-      expect(handler).toHaveBeenCalledWith({
-        data: frameData,
-        width: 256,
-        height: 240,
-      });
-    });
-
-    it("emits audioSamples events from worker", () => {
-      const handler = vi.fn();
-      client.on("audioSamples", handler);
-
-      const samples = Buffer.alloc(1470);
-      emitWorkerMessage({
-        type: "audioSamples",
-        samples,
-        sampleRate: 44_100,
-      });
-
-      expect(handler).toHaveBeenCalledWith({
-        samples,
-        sampleRate: 44_100,
-      });
-    });
-
     it("emits error events from worker", () => {
       const handler = vi.fn();
       client.on("error", handler);
@@ -446,68 +411,16 @@ describe("EmulationWorkerClient", () => {
     });
   });
 
-  describe("SharedArrayBuffer allocation", () => {
-    it("allocates SABs and sends setupSharedBuffers command after init", async () => {
+  describe("attachFramePort", () => {
+    it("transfers the port to the worker", async () => {
       const initPromise = client.init(TEST_INIT_OPTIONS);
       emitWorkerMessage({ type: "ready", avInfo: TEST_AV_INFO, saveStatesSupported: true });
       await initPromise;
 
-      const bufs = client.getSharedBuffers();
-      if (!bufs) {
-        throw new Error("Expected shared buffers to be allocated");
-      }
-      expect(bufs.control).toBeInstanceOf(SharedArrayBuffer);
-      expect(bufs.video).toBeInstanceOf(SharedArrayBuffer);
-      expect(bufs.audio).toBeInstanceOf(SharedArrayBuffer);
+      const port = {} as MessagePortMain;
+      client.attachFramePort(port);
 
-      // Verify setupSharedBuffers command was sent to the worker
-      const setupCall = mockPostMessage.mock.calls.find(
-        (call) => call[0].action === "setupSharedBuffers",
-      );
-      if (!setupCall) {
-        throw new Error("Expected setupSharedBuffers command to be sent");
-      }
-      expect(setupCall[0].controlSAB).toBe(bufs.control);
-      expect(setupCall[0].videoSAB).toBe(bufs.video);
-      expect(setupCall[0].audioSAB).toBe(bufs.audio);
-      expect(setupCall[0].videoBufferSize).toBeGreaterThan(0);
-    });
-
-    it("initializes audio sample rate in control buffer", async () => {
-      const initPromise = client.init(TEST_INIT_OPTIONS);
-      emitWorkerMessage({ type: "ready", avInfo: TEST_AV_INFO, saveStatesSupported: true });
-      await initPromise;
-
-      const bufs = client.getSharedBuffers();
-      if (!bufs) {
-        throw new Error("Expected shared buffers to be allocated");
-      }
-      const ctrl = new Int32Array(bufs.control);
-      // CTRL_AUDIO_SAMPLE_RATE is at index 6
-      expect(Atomics.load(ctrl, 6)).toBe(TEST_AV_INFO.timing.sampleRate);
-    });
-
-    it("clears shared buffers on shutdown", async () => {
-      const initPromise = client.init(TEST_INIT_OPTIONS);
-      emitWorkerMessage({ type: "ready", avInfo: TEST_AV_INFO, saveStatesSupported: true });
-      await initPromise;
-
-      expect(client.getSharedBuffers()).not.toBeNull();
-
-      const shutdownPromise = client.shutdown();
-      const lastCall = lastPostedMessage();
-      emitWorkerMessage({
-        type: "response",
-        requestId: lastCall.requestId,
-        success: true,
-      });
-      await shutdownPromise;
-
-      expect(client.getSharedBuffers()).toBeNull();
-    });
-
-    it("returns null for getSharedBuffers before init", () => {
-      expect(client.getSharedBuffers()).toBeNull();
+      expect(mockPostMessage).toHaveBeenLastCalledWith({ action: "attachFramePort" }, [port]);
     });
   });
 
