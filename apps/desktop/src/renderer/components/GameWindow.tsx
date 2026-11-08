@@ -41,7 +41,11 @@ import {
 import type { Game } from "../../types/library";
 import type { GamelordAPI, VideoFrame } from "../types/global";
 import type { AVInfo } from "../../main/workers/core-worker-protocol";
-import type { FramePortMessage } from "../../main/workers/core-worker-protocol";
+import type {
+  FramePortMessage,
+  GameWindowPortMessage,
+} from "../../main/workers/core-worker-protocol";
+import { audioPlaybackRate } from "../lib/audio/playbackRate";
 import { GAME_FRAME_PORT_MESSAGE } from "../../types/gameFramePort";
 import { DevBranchBadge } from "./DevBranchBadge";
 import { EmulationErrorDialog } from "./EmulationErrorDialog";
@@ -323,6 +327,8 @@ export const GameWindow: React.FC = () => {
   const audioNextTimeRef = useRef(0);
   const gainNodeRef = useRef<GainNode | null>(null);
   const pendingFrameRef = useRef<VideoFrame | null>(null);
+  // A frame meant for a display refresh was replaced before it was drawn.
+  const missedRefreshRef = useRef(false);
   /** Gate: don't render frames until the boot animation overlay is in place. */
   const bootReadyRef = useRef(false);
   const rafIdRef = useRef<number>(0);
@@ -444,8 +450,12 @@ export const GameWindow: React.FC = () => {
     } else if (audioNextTimeRef.current > now + MAX_LOOKAHEAD_S) {
       audioNextTimeRef.current = now + PRE_BUFFER_S;
     }
+    // Nudge the rate so the queue stays near the pre-buffer, instead of
+    // slowly draining into gaps as the clocks drift apart.
+    const rate = audioPlaybackRate(audioNextTimeRef.current - now, PRE_BUFFER_S);
+    source.playbackRate.value = rate;
     source.start(audioNextTimeRef.current);
-    audioNextTimeRef.current += buffer.duration;
+    audioNextTimeRef.current += buffer.duration / rate;
   }, []);
 
   useEffect(() => {
@@ -572,6 +582,9 @@ export const GameWindow: React.FC = () => {
       // but don't initialize the renderer or draw until the boot animation
       // overlay is in place. This prevents the game content from flashing
       // before the CRT/LCD power-on animation starts.
+      if (pendingFrameRef.current?.targetTime !== undefined && rendererRef.current) {
+        missedRefreshRef.current = true;
+      }
       pendingFrameRef.current = frameData;
 
       const canvas = canvasRef.current;
@@ -600,6 +613,20 @@ export const GameWindow: React.FC = () => {
           // each display vsync instead of rendering directly from IPC events.
           // Also measures FPS via exponential moving average of frame deltas.
           const renderLoop = (timestamp: number) => {
+            // Report this refresh to the worker, which runs core frames just
+            // before refreshes. A frame drawn half a refresh or more after the
+            // one it was run for arrived late.
+            const refreshMs =
+              lastFrameTimeRef.current > 0 ? timestamp - lastFrameTimeRef.current : 1000 / 60;
+            const vsyncTime = performance.timeOrigin + timestamp;
+            const targetTime = pendingFrameRef.current?.targetTime;
+            const late =
+              missedRefreshRef.current ||
+              (targetTime !== undefined && vsyncTime - targetTime > refreshMs / 2);
+            missedRefreshRef.current = false;
+            const vsync: GameWindowPortMessage = { type: "vsync", time: vsyncTime, late };
+            framePort?.postMessage(vsync);
+
             if (lastFrameTimeRef.current > 0) {
               const delta = timestamp - lastFrameTimeRef.current;
               if (delta > 0) {
