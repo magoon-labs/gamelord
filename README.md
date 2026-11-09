@@ -52,6 +52,18 @@
 
 More systems are on the way — the goal is to support any libretro-compatible core.
 
+## Download
+
+Prebuilt builds publish every night from `main` as [nightly pre-releases](https://github.com/magoon-labs/gamelord/releases?q=nightly&expanded=true). Grab the newest one:
+
+| Platform | What's available |
+|----------|------------------|
+| macOS (Apple Silicon) | Signed and notarized `.dmg` |
+| Windows | `Setup .exe` installer. It's unsigned, so SmartScreen will warn on first launch ([#204](https://github.com/magoon-labs/gamelord/issues/204)) |
+| Linux | Not built yet ([#206](https://github.com/magoon-labs/gamelord/issues/206)) |
+
+Stable releases will appear on the [Releases page](https://github.com/magoon-labs/gamelord/releases) once the alpha ships.
+
 ## Getting Started
 
 ### Prerequisites
