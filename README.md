@@ -96,6 +96,10 @@ pnpm typecheck     # Type check
 pnpm storybook     # Component browser
 ```
 
+## Controls
+
+The keyboard maps to a RetroPad (arrows, <kbd>Z</kbd>/<kbd>X</kbd>/<kbd>A</kbd>/<kbd>S</kbd>, <kbd>Q</kbd>/<kbd>W</kbd>, <kbd>Enter</kbd>, <kbd>Shift</kbd>), and standard gamepads work out of the box. In a game, press <kbd>?</kbd> to see the controls. See [docs/controls.md](docs/controls.md) for every key, the app shortcuts and gamepad remapping.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions and development workflow. For a deep dive into how the app is structured, check out [ARCHITECTURE.md](ARCHITECTURE.md).
