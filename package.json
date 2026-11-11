@@ -37,8 +37,8 @@
     "eslint-plugin-perfectionist": "^5.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-unused-imports": "^4.4.1",
-    "oxfmt": "^0.75.0",
-    "oxlint": "^1.90.0",
+    "oxfmt": "^0.77.0",
+    "oxlint": "^1.92.0",
     "turbo": "^2.11.10",
     "typescript": "5.9.3"
   },
