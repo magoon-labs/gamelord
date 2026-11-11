@@ -49,22 +49,7 @@ import { PowerAnimation } from "./animations";
 import { getDisplayType } from "../../types/displayType";
 import { useGamepad } from "../hooks/useGamepad";
 import { useSfx } from "../hooks/useSfx";
-
-// Keyboard → libretro joypad button mapping
-const KEY_MAP: Record<string, number> = {
-  x: 0, // B
-  s: 1, // Y
-  Shift: 2, // Select
-  Enter: 3, // Start
-  ArrowUp: 4, // Up
-  ArrowDown: 5, // Down
-  ArrowLeft: 6, // Left
-  ArrowRight: 7, // Right
-  z: 8, // A
-  a: 9, // X
-  q: 10, // L
-  w: 11, // R
-};
+import { KEYBOARD_KEYS, retroButtonForKeyEvent } from "../lib/keyboard/keymap";
 
 /** Libretro button index → human-readable label for the controls overlay. */
 const RETRO_BUTTON_LABELS: Record<number, string> = {
@@ -82,14 +67,12 @@ const RETRO_BUTTON_LABELS: Record<number, string> = {
   11: "R",
 };
 
-/** Derive overlay bindings directly from KEY_MAP — single source of truth. */
-const KEYBOARD_BINDINGS: ReadonlyArray<KeyboardBinding> = Object.entries(KEY_MAP).map(
-  ([key, retroId]) => ({
-    key,
-    label: RETRO_BUTTON_LABELS[retroId] ?? `Button ${retroId}`,
-    retroId,
-  }),
-);
+/** Derive overlay bindings directly from KEYBOARD_KEYS — single source of truth. */
+const KEYBOARD_BINDINGS: ReadonlyArray<KeyboardBinding> = KEYBOARD_KEYS.map(({ key, retroId }) => ({
+  key,
+  label: RETRO_BUTTON_LABELS[retroId] ?? `Button ${retroId}`,
+  retroId,
+}));
 
 export const GameWindow: React.FC = () => {
   const api = (window as unknown as { gamelord: GamelordAPI }).gamelord;
@@ -769,7 +752,7 @@ export const GameWindow: React.FC = () => {
       if (isTypingInInput(e)) {
         return;
       }
-      const buttonId = KEY_MAP[e.key];
+      const buttonId = retroButtonForKeyEvent(e);
       if (buttonId !== undefined) {
         e.preventDefault();
         api.gameInput(0, buttonId, true);
@@ -780,7 +763,7 @@ export const GameWindow: React.FC = () => {
       if (isTypingInInput(e)) {
         return;
       }
-      const buttonId = KEY_MAP[e.key];
+      const buttonId = retroButtonForKeyEvent(e);
       if (buttonId !== undefined) {
         e.preventDefault();
         api.gameInput(0, buttonId, false);
