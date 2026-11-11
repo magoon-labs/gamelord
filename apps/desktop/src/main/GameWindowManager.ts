@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, MessageChannelMain, nativeImage, screen } from "electron";
+import { createGameWindowStartup, onGameRendererReady } from "./gameWindowStartup";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { execFile } from "node:child_process";
@@ -142,6 +143,43 @@ export class GameWindowManager extends EventEmitter {
       gameWindow.loadFile(path.join(__dirname, "../renderer/game-window.html"));
     }
 
+    const startup = createGameWindowStartup({
+      hasHeroTransition,
+      sendInitialState: () => {
+        // Connect the worker straight to this window, so main process work
+        // can't delay video and audio.
+        const { port1, port2 } = new MessageChannelMain();
+        workerClient.attachFramePort(port1);
+        gameWindow.webContents.postMessage("game:frame-port", null, [port2]);
+
+        gameWindow.webContents.send("game:loaded", game);
+        gameWindow.webContents.send("game:mode", "native");
+        gameWindow.webContents.send("game:av-info", avInfo);
+        gameWindow.webContents.send("game:save-states-supported", saveStatesSupported);
+        if (discInfo) {
+          gameWindow.webContents.send("game:disc-info", {
+            total: discInfo.paths.length,
+            currentIndex: discInfo.initialIndex,
+            missingIndices: discInfo.missingIndices ?? [],
+          });
+        }
+
+        if (shouldResume) {
+          workerClient.loadState(99).catch((error) => {
+            gameWindowLog.error("Failed to load autosave:", error);
+          });
+        }
+      },
+      startBoot: () => {
+        gameWindow.webContents.send("game:ready-for-boot");
+        // With a card animation, the animation has already focused the window.
+        if (!hasHeroTransition) {
+          gameWindow.focus();
+        }
+      },
+    });
+    onGameRendererReady(gameWindow, startup.handleRendererReady);
+
     // Run the hero transition if card bounds were provided.
     // The window starts at the card's screen position and morphs to its
     // final bounds, then signals the renderer to start the boot animation.
@@ -150,79 +188,13 @@ export class GameWindowManager extends EventEmitter {
       gameWindow.once("ready-to-show", () => {
         animateWindowOpen(gameWindow, cardScreenBounds, finalBounds).then(() => {
           if (!gameWindow.isDestroyed()) {
-            gameWindow.webContents.send("game:ready-for-boot");
+            startup.handleHeroFinished();
           }
         });
       });
     }
 
-    gameWindow.webContents.on("did-finish-load", () => {
-      gameWindow.webContents.send("game:loaded", game);
-      gameWindow.webContents.send("game:mode", "native");
-      gameWindow.webContents.send("game:av-info", avInfo);
-      gameWindow.webContents.send("game:save-states-supported", saveStatesSupported);
-      if (discInfo) {
-        gameWindow.webContents.send("game:disc-info", {
-          total: discInfo.paths.length,
-          currentIndex: discInfo.initialIndex,
-          missingIndices: discInfo.missingIndices ?? [],
-        });
-      }
-
-      // If no hero transition, tell renderer to start boot animation immediately
-      // and focus the window so keyboard input works right away.
-      if (!hasHeroTransition) {
-        gameWindow.webContents.send("game:ready-for-boot");
-        gameWindow.focus();
-      }
-
-      if (shouldResume) {
-        workerClient.loadState(99).catch((error) => {
-          gameWindowLog.error("Failed to load autosave:", error);
-        });
-      }
-    });
-
     this.activeWorkerClient = workerClient;
-
-    // Set up zero-copy frame transfer via SharedArrayBuffer + MessagePort.
-    // The main process creates a MessageChannel and sends one port to the
-    // renderer via webContents.postMessage (which supports port transfer,
-    // unlike webContents.send). The SABs are then sent through that port.
-    const sharedBuffers = workerClient.getSharedBuffers();
-    if (sharedBuffers) {
-      const { port1, port2 } = new MessageChannelMain();
-      gameWindow.webContents.on("did-finish-load", () => {
-        if (gameWindow.isDestroyed()) {
-          return;
-        }
-        gameWindow.webContents.postMessage("game:shared-frame-port", null, [port2]);
-
-        // Send SABs through the port after a microtask delay to ensure
-        // the renderer's port.onmessage handler is registered.
-        port1.start();
-        port1.postMessage({
-          type: "sharedBuffers",
-          control: sharedBuffers.control,
-          video: sharedBuffers.video,
-          audio: sharedBuffers.audio,
-        });
-      });
-    }
-
-    // Forward video frames from worker to renderer (fallback when SAB is not active)
-    workerClient.on("videoFrame", (frame: { data: Buffer; width: number; height: number }) => {
-      if (!gameWindow.isDestroyed()) {
-        gameWindow.webContents.send("game:video-frame", frame);
-      }
-    });
-
-    // Forward audio samples from worker to renderer
-    workerClient.on("audioSamples", (audio: { samples: Buffer; sampleRate: number }) => {
-      if (!gameWindow.isDestroyed()) {
-        gameWindow.webContents.send("game:audio-samples", audio);
-      }
-    });
 
     // Forward fatal errors to renderer
     workerClient.on("error", (err: { message: string; fatal: boolean }) => {
@@ -339,7 +311,7 @@ export class GameWindowManager extends EventEmitter {
       gameWindow.loadFile(path.join(__dirname, "../renderer/game-window.html"));
     }
 
-    gameWindow.webContents.on("did-finish-load", () => {
+    onGameRendererReady(gameWindow, () => {
       gameWindow.webContents.send("game:loaded", game);
       gameWindow.webContents.send("game:mode", "overlay");
     });

@@ -12,18 +12,11 @@ import { performance } from "node:perf_hooks";
 import type {
   NativeAddon,
   NativeLibretroCore,
+  FramePortMessage,
   WorkerCommand,
   WorkerEvent,
   AVInfo,
 } from "./core-worker-protocol";
-import {
-  CTRL_ACTIVE_BUFFER,
-  CTRL_FRAME_SEQUENCE,
-  CTRL_FRAME_WIDTH,
-  CTRL_FRAME_HEIGHT,
-  CTRL_AUDIO_WRITE_POS,
-  CTRL_AUDIO_SAMPLE_RATE,
-} from "./shared-frame-protocol";
 import { filterForwardableLogs, extractSerialFromLog } from "./core-worker-protocol";
 import { listSaveStates, writeSaveState } from "./save-state-files";
 import type { RgbaFrame } from "./save-state-thumbnail";
@@ -62,12 +55,9 @@ let fastForwardAudio = false;
 let consecutiveErrors = 0;
 const MAX_CONSECUTIVE_ERRORS = 5;
 
-// SharedArrayBuffer state (null = fallback to copy-based IPC)
-let controlView: Int32Array | null = null;
-let videoView: Uint8Array | null = null;
-let audioView: Int16Array | null = null;
-let videoBufferSize = 0;
-let useSharedBuffers = false;
+// Direct line to the game window for video and audio. Output is dropped until
+// the window has connected, since it has nowhere to draw before that.
+let framePort: Electron.MessagePortMain | null = null;
 
 // Spin threshold: busy-wait the last N ms of each frame for precise timing
 const SPIN_THRESHOLD_MS = 2;
@@ -299,75 +289,24 @@ function initialize(command: Extract<WorkerCommand, { action: "init" }>): void {
 }
 
 // ---------------------------------------------------------------------------
-// SharedArrayBuffer helpers
+// Video and audio output
 // ---------------------------------------------------------------------------
 
-/** Write a video frame into the inactive double-buffer and swap the active flag. */
-function writeVideoToSAB(frame: { data: Uint8Array; width: number; height: number }): void {
-  if (!controlView || !videoView) {
-    return;
-  }
-  const ctrl = controlView;
-  const video = videoView;
-
-  // Write to the opposite buffer from the one the renderer is reading
-  const currentActive = Atomics.load(ctrl, CTRL_ACTIVE_BUFFER);
-  const writeBuffer = currentActive === 0 ? 1 : 0;
-  const offset = writeBuffer * videoBufferSize;
-
-  video.set(
-    new Uint8Array(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength),
-    offset,
-  );
-
-  // Update dimensions, then swap active buffer, then bump sequence.
-  // Order matters: the renderer reads sequence last, so dimensions
-  // and buffer swap are visible before it notices the new frame.
-  Atomics.store(ctrl, CTRL_FRAME_WIDTH, frame.width);
-  Atomics.store(ctrl, CTRL_FRAME_HEIGHT, frame.height);
-  Atomics.store(ctrl, CTRL_ACTIVE_BUFFER, writeBuffer);
-  Atomics.add(ctrl, CTRL_FRAME_SEQUENCE, 1);
+function sendToGameWindow(message: FramePortMessage): void {
+  framePort?.postMessage(message);
 }
 
-/** Write audio samples into the SPSC ring buffer. */
-function writeAudioToSAB(samples: Int16Array): void {
-  if (!controlView || !audioView) {
-    return;
-  }
-  const ctrl = controlView;
-  const ring = audioView;
-  const ringLen = ring.length;
-
-  let writePos = Atomics.load(ctrl, CTRL_AUDIO_WRITE_POS);
-
-  for (let i = 0; i < samples.length; i++) {
-    ring[writePos % ringLen] = samples[i];
-    writePos++;
-  }
-
-  // Release: all ring writes are visible before the consumer sees the new writePos
-  Atomics.store(ctrl, CTRL_AUDIO_WRITE_POS, writePos);
-}
-
-/** Send a video frame via copy-based IPC (fallback path). */
 function sendVideoFrame(frame: { data: Uint8Array; width: number; height: number }): void {
-  send({
+  sendToGameWindow({
     type: "videoFrame",
-    data: Buffer.from(
-      frame.data.buffer.slice(frame.data.byteOffset, frame.data.byteOffset + frame.data.byteLength),
-    ),
+    data: frame.data,
     width: frame.width,
     height: frame.height,
   });
 }
 
-/** Send audio samples via copy-based IPC (fallback path). */
-function sendAudioSamples(audio: Int16Array): void {
-  send({
-    type: "audioSamples",
-    samples: Buffer.from(audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength)),
-    sampleRate,
-  });
+function sendAudioSamples(samples: Int16Array): void {
+  sendToGameWindow({ type: "audioSamples", samples, sampleRate });
 }
 
 // ---------------------------------------------------------------------------
@@ -485,22 +424,14 @@ function startEmulationLoop(): void {
     const frame = native.getVideoFrame();
     if (frame) {
       lastFrame = frame;
-      if (useSharedBuffers) {
-        writeVideoToSAB(frame);
-      } else {
-        sendVideoFrame(frame);
-      }
+      sendVideoFrame(frame);
     }
 
     // Optionally send audio during fast-forward (plays at sped-up rate)
     if (fastForwardAudio) {
       const audio = native.getAudioBuffer();
       if (audio && audio.length > 0) {
-        if (useSharedBuffers) {
-          writeAudioToSAB(audio);
-        } else {
-          sendAudioSamples(audio);
-        }
+        sendAudioSamples(audio);
       }
     }
 
@@ -555,21 +486,13 @@ function startEmulationLoop(): void {
       const frame = native.getVideoFrame();
       if (frame) {
         lastFrame = frame;
-        if (useSharedBuffers) {
-          writeVideoToSAB(frame);
-        } else {
-          sendVideoFrame(frame);
-        }
+        sendVideoFrame(frame);
       }
 
       // Send audio samples (only at 1x speed)
       const audio = native.getAudioBuffer();
       if (audio && audio.length > 0) {
-        if (useSharedBuffers) {
-          writeAudioToSAB(audio);
-        } else {
-          sendAudioSamples(audio);
-        }
+        sendAudioSamples(audio);
       }
 
       drainLogs();
@@ -714,15 +637,6 @@ function handleMessage(command: WorkerCommand): void {
           error instanceof Error ? error.message : String(error),
         );
       }
-      break;
-
-    case "setupSharedBuffers":
-      controlView = new Int32Array(command.controlSAB);
-      videoView = new Uint8Array(command.videoSAB);
-      audioView = new Int16Array(command.audioSAB);
-      videoBufferSize = command.videoBufferSize;
-      useSharedBuffers = true;
-      Atomics.store(controlView, CTRL_AUDIO_SAMPLE_RATE, sampleRate);
       break;
 
     case "cheatReset":
@@ -888,6 +802,11 @@ function handleMessage(command: WorkerCommand): void {
 // Entry point
 // ---------------------------------------------------------------------------
 
-process.parentPort.on("message", (event: { data: WorkerCommand }) => {
-  handleMessage(event.data);
+process.parentPort.on("message", (event: Electron.MessageEvent) => {
+  const command = event.data as WorkerCommand;
+  if (command.action === "attachFramePort") {
+    framePort = event.ports[0];
+    return;
+  }
+  handleMessage(command);
 });

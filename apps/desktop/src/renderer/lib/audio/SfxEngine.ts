@@ -2,13 +2,16 @@
  * Singleton sound effects engine.
  *
  * Manages a dedicated AudioContext (separate from the emulation audio),
- * pre-renders all UI sounds into AudioBuffers at startup, and exposes
- * a fire-and-forget `play()` method.
+ * pre-renders all UI sounds into AudioBuffers, and exposes a fire-and-forget
+ * `play()` method.
  *
- * The AudioContext is created eagerly during app load (before the user
- * interacts) so the ~500ms OS audio subsystem init doesn't block any
- * UI interaction. The context starts suspended per autoplay policy and
- * is resumed on the first `play()` call.
+ * The AudioContext registers a system audio client, so it isn't created until
+ * it's needed. When sound effects are enabled, the first user gesture creates
+ * it, paying the ~500ms OS audio subsystem init before the first `play()`
+ * rather than during it. A `play()` with no prior gesture creates it instead.
+ * It is never created while sound effects are disabled. A context created
+ * outside a gesture starts suspended per autoplay policy, and `play()` resumes
+ * it.
  *
  * Preferences (enabled, volume) are persisted to localStorage and
  * exposed via a subscribe/getSnapshot pattern for useSyncExternalStore.
@@ -28,10 +31,18 @@ type Listener = () => void;
 const STORAGE_KEY_ENABLED = "gamelord:sfx-enabled";
 const STORAGE_KEY_VOLUME = "gamelord:sfx-volume";
 
+/** Capture phase, so a gesture counts even if a handler stops propagation. */
+const GESTURE_LISTENER_OPTIONS = { capture: true, passive: true };
+
+/** The AudioContext and everything derived from it, created together. */
+interface SfxAudio {
+  buffers: Map<SfxId, AudioBuffer>;
+  ctx: AudioContext;
+  gainNode: GainNode;
+}
+
 class SfxEngine {
-  private readonly ctx: AudioContext;
-  private readonly gainNode: GainNode;
-  private readonly buffers = new Map<SfxId, AudioBuffer>();
+  private audio: SfxAudio | null = null;
   private preferences: SfxPreferences;
   private listeners = new Set<Listener>();
 
@@ -43,17 +54,8 @@ class SfxEngine {
       volume: storedVolume !== null ? Number.parseFloat(storedVolume) : 0.5,
     };
 
-    // Initialize everything at startup. `new AudioContext()` takes ~500ms in
-    // Electron (OS audio subsystem init), but this runs during app load when
-    // the user isn't interacting, so there's nothing to hitch. The context
-    // starts suspended (autoplay policy) and is resumed on first play().
-    this.ctx = new AudioContext();
-    this.gainNode = this.ctx.createGain();
-    this.gainNode.gain.value = this.preferences.volume;
-    this.gainNode.connect(this.ctx.destination);
-
-    for (const [id, generator] of Object.entries(soundGenerators)) {
-      this.buffers.set(id as SfxId, generator(this.ctx));
+    if (this.preferences.enabled) {
+      this.addGestureListeners();
     }
   }
 
@@ -63,18 +65,20 @@ class SfxEngine {
       return;
     }
 
-    if (this.ctx.state === "suspended") {
-      void this.ctx.resume();
+    const { buffers, ctx, gainNode } = this.getOrCreateAudio();
+
+    if (ctx.state === "suspended") {
+      void ctx.resume();
     }
 
-    const buffer = this.buffers.get(id);
+    const buffer = buffers.get(id);
     if (!buffer) {
       return;
     }
 
-    const source = this.ctx.createBufferSource();
+    const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.gainNode);
+    source.connect(gainNode);
     source.start(0);
   }
 
@@ -92,6 +96,11 @@ class SfxEngine {
   setEnabled(enabled: boolean): void {
     this.preferences = { ...this.preferences, enabled };
     localStorage.setItem(STORAGE_KEY_ENABLED, String(enabled));
+    if (!enabled) {
+      this.removeGestureListeners();
+    } else if (!this.audio) {
+      this.addGestureListeners();
+    }
     this.notify();
   }
 
@@ -99,7 +108,9 @@ class SfxEngine {
     const clamped = Math.max(0, Math.min(1, volume));
     this.preferences = { ...this.preferences, volume: clamped };
     localStorage.setItem(STORAGE_KEY_VOLUME, String(clamped));
-    this.gainNode.gain.value = clamped;
+    if (this.audio) {
+      this.audio.gainNode.gain.value = clamped;
+    }
     this.notify();
   }
 
@@ -109,6 +120,41 @@ class SfxEngine {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  private getOrCreateAudio(): SfxAudio {
+    if (this.audio) {
+      return this.audio;
+    }
+
+    this.removeGestureListeners();
+
+    const ctx = new AudioContext();
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = this.preferences.volume;
+    gainNode.connect(ctx.destination);
+
+    const buffers = new Map<SfxId, AudioBuffer>();
+    for (const [id, generator] of Object.entries(soundGenerators)) {
+      buffers.set(id as SfxId, generator(ctx));
+    }
+
+    this.audio = { buffers, ctx, gainNode };
+    return this.audio;
+  }
+
+  private readonly handleGesture = (): void => {
+    this.getOrCreateAudio();
+  };
+
+  private addGestureListeners(): void {
+    window.addEventListener("pointerdown", this.handleGesture, GESTURE_LISTENER_OPTIONS);
+    window.addEventListener("keydown", this.handleGesture, GESTURE_LISTENER_OPTIONS);
+  }
+
+  private removeGestureListeners(): void {
+    window.removeEventListener("pointerdown", this.handleGesture, GESTURE_LISTENER_OPTIONS);
+    window.removeEventListener("keydown", this.handleGesture, GESTURE_LISTENER_OPTIONS);
   }
 
   private notify(): void {
