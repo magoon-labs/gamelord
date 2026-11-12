@@ -1667,6 +1667,7 @@ export const GameWindow: React.FC = () => {
           }
         }}
         bindings={filterBindingsForSystem(KEYBOARD_BINDINGS, game?.systemId)}
+        hasMultipleDiscs={discTotal > 1}
       />
 
       {/* Cheat panel overlay */}
