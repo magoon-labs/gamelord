@@ -312,7 +312,7 @@ export const FilterByGenre: Story = {
       expect(cardTitles()).toEqual(["Castlevania", "Super Mario Bros.", "The Legend of Zelda"]),
     );
     await expect(genreTrigger).toHaveTextContent("All Genres");
-    await expect(canvas.queryByText("Action ✕")).not.toBeInTheDocument();
+    await waitFor(() => expect(canvas.queryByText("Action ✕")).not.toBeInTheDocument());
 
     // Re-select the genre, then drop the platform: only Action games remain
     await chooseOption(genreTrigger, "Action");
@@ -381,6 +381,125 @@ export const NoGenres: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.queryByRole("combobox", { name: "Filter by genre" })).toBeNull();
     await expect(getCardTitles(canvasElement)).toHaveLength(8);
+  },
+};
+
+/** One game per real system name, so the platform filter shows what users actually see. */
+const realSystemNames = [
+  "Arcade",
+  "Game Boy",
+  "Game Boy Advance",
+  "Game Boy Color",
+  "Nintendo 64",
+  "Nintendo DS",
+  "Nintendo Entertainment System",
+  "Nintendo GameCube",
+  "PlayStation",
+  "PlayStation Portable",
+  "Sega Genesis",
+  "Sega Saturn",
+  "Super Nintendo Entertainment System",
+];
+
+const gamesOnRealSystems = realSystemNames.map((platform, index) => ({
+  id: `real-${index}`,
+  title: `${platform} Game`,
+  platform,
+  genre: index % 2 === 0 ? "Action" : "RPG",
+  favorite: index % 3 === 0,
+  coverArtAspectRatio: 0.75,
+  romPath: `/roms/real-${index}.rom`,
+}));
+
+export const RealSystemNames: Story = {
+  args: {
+    games: gamesOnRealSystems,
+    onPlayGame() {
+      /* storybook action placeholder */
+    },
+  },
+  decorators: [
+    (Story) => (
+      <div className="p-8 bg-background min-h-screen">
+        <Story />
+      </div>
+    ),
+  ],
+};
+
+/**
+ * Filter chips are real buttons: selecting a filter adds one, and removing it
+ * by mouse or keyboard clears the filter. Removal waits out the exit animation.
+ */
+export const FilterChips: Story = {
+  args: {
+    games: gamesOnRealSystems,
+    onPlayGame() {
+      /* storybook action placeholder */
+    },
+  },
+  decorators: [
+    (Story) => (
+      <div className="p-8 bg-background min-h-screen">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const platformTrigger = canvas.getAllByRole("combobox")[0];
+    const genreTrigger = canvas.getByRole("combobox", { name: "Filter by genre" });
+    const chip = (label: string) =>
+      canvas.queryByRole("button", { name: `Remove ${label} filter` });
+    const expectChipGone = (label: string) =>
+      waitFor(() => expect(chip(label)).not.toBeInTheDocument());
+    const longestSystem = "Super Nintendo Entertainment System";
+
+    // The trigger's tooltip and the chip both carry a long system name in full
+    await chooseOption(platformTrigger, longestSystem);
+    await expect(chip(longestSystem)).toBeInTheDocument();
+    await expect(chip(longestSystem)).toHaveTextContent(longestSystem);
+    await expect(platformTrigger).toHaveAttribute("title", longestSystem);
+
+    // Removing with the mouse clears the filter
+    await userEvent.click(chip(longestSystem)!);
+    await expectChipGone(longestSystem);
+    await expect(platformTrigger).toHaveTextContent("All Platforms");
+    await expect(getCardTitles(canvasElement)).toHaveLength(13);
+
+    // Chips keep filter order however they were added
+    await userEvent.click(canvas.getByRole("button", { name: "Show favorites only" }));
+    await chooseOption(genreTrigger, "Action");
+    await chooseOption(platformTrigger, "Arcade");
+    const chipLabels = () =>
+      within(canvas.getByRole("group", { name: "Active filters" }))
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label"));
+    await expect(chipLabels()).toEqual([
+      "Remove Arcade filter",
+      "Remove Action filter",
+      "Remove Favorites filter",
+    ]);
+
+    // Enter removes the focused chip, and focus moves to the next one
+    chip("Action")!.focus();
+    await expect(chip("Action")).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await expect(chip("Favorites")).toHaveFocus();
+    await expectChipGone("Action");
+    await expect(genreTrigger).toHaveTextContent("All Genres");
+
+    // Space works too, and focus falls back to the previous chip
+    await userEvent.keyboard(" ");
+    await expect(chip("Arcade")).toHaveFocus();
+    await expectChipGone("Favorites");
+    await expect(canvas.getByRole("button", { name: "Show favorites only" })).toBeInTheDocument();
+
+    // Removing the last chip leaves focus on the group, not lost on the body
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByRole("group", { name: "Active filters" })).toHaveFocus();
+    await expectChipGone("Arcade");
+    await expect(platformTrigger).toHaveTextContent("All Platforms");
   },
 };
 

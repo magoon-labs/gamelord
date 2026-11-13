@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useCallback, useEffect } from "react"
 import { GameCard, Game, GameCardMenuItem } from "./GameCard";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
+import { ActiveFilterChips, type ActiveFilter } from "./ActiveFilterChips";
 import { GenreFilterSelect } from "./GenreFilterSelect";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Search, Filter, Grid, List, Heart, Disc2 } from "lucide-react";
@@ -138,6 +138,32 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
   }, [games]);
 
   const genres = useMemo(() => getGenres(games), [games]);
+
+  const activeFilters = useMemo(() => {
+    const filters: Array<ActiveFilter> = [];
+    if (selectedPlatform !== "all") {
+      filters.push({
+        key: `platform:${selectedPlatform}`,
+        label: selectedPlatform,
+        onRemove: () => setSelectedPlatform("all"),
+      });
+    }
+    if (selectedGenre !== ALL_GENRES) {
+      filters.push({
+        key: `genre:${selectedGenre}`,
+        label: selectedGenre,
+        onRemove: () => setSelectedGenre(ALL_GENRES),
+      });
+    }
+    if (showFavoritesOnly) {
+      filters.push({
+        key: "favorites",
+        label: "Favorites",
+        onRemove: () => setShowFavoritesOnly(false),
+      });
+    }
+    return filters;
+  }, [selectedPlatform, selectedGenre, showFavoritesOnly]);
 
   // Filter and sort games
   const filteredGames = useMemo(() => {
@@ -457,7 +483,10 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
           {/* Filters */}
           <div className="flex gap-2">
             <Select onValueChange={setSelectedPlatform} value={selectedPlatform}>
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger
+                className="w-[160px] xl:w-[210px] [&>svg]:shrink-0"
+                title={selectedPlatform === "all" ? undefined : selectedPlatform}
+              >
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="Platform" />
               </SelectTrigger>
@@ -524,39 +553,11 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
         </div>
 
         {/* Results count */}
-        <div className="flex items-center justify-between">
+        <div className="flex min-h-[22px] items-center justify-between">
           <p className="text-sm text-muted-foreground">
             {filteredGames.length} {filteredGames.length === 1 ? "game" : "games"}
           </p>
-          <div className="flex items-center gap-2">
-            {selectedPlatform !== "all" && (
-              <Badge
-                className="cursor-pointer"
-                onClick={() => setSelectedPlatform("all")}
-                variant="secondary"
-              >
-                {selectedPlatform} ✕
-              </Badge>
-            )}
-            {selectedGenre !== ALL_GENRES && (
-              <Badge
-                className="cursor-pointer"
-                onClick={() => setSelectedGenre(ALL_GENRES)}
-                variant="secondary"
-              >
-                {selectedGenre} ✕
-              </Badge>
-            )}
-            {showFavoritesOnly && (
-              <Badge
-                className="cursor-pointer"
-                onClick={() => setShowFavoritesOnly(false)}
-                variant="secondary"
-              >
-                Favorites ✕
-              </Badge>
-            )}
-          </div>
+          <ActiveFilterChips filters={activeFilters} />
         </div>
       </div>
 
