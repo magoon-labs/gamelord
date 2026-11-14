@@ -5,3 +5,9 @@ packages:
 
 onlyBuiltDependencies:
   - electron
+
+# ffmpeg-static's install script downloads a ~40MB ffmpeg binary. Only the
+# dev-only demo recorder needs it, so scripts/record-demo.mjs downloads it on
+# first use instead of on every install (including CI).
+ignoredBuiltDependencies:
+  - ffmpeg-static
