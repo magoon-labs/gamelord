@@ -362,6 +362,81 @@ export const FilterByGenreWithSearchAndFavorites: Story = {
   },
 };
 
+/**
+ * Search fuzzy-matches titles, so abbreviations and partial words work. While
+ * a query is active, the best match comes first: "Zelda II" starts with
+ * "zelda", so it leads even though it sorts last by title. Clearing the query
+ * restores the selected sort.
+ */
+export const FuzzySearch: Story = {
+  args: {
+    games: [
+      ...sampleGames,
+      {
+        id: "9",
+        title: "The Legend of Zelda: A Link to the Past",
+        platform: "SNES",
+        genre: "Adventure",
+        coverArtAspectRatio: 0.714,
+        romPath: "/roms/alttp.smc",
+      },
+      {
+        id: "10",
+        title: "Zelda II: The Adventure of Link",
+        platform: "NES",
+        genre: "Adventure",
+        coverArtAspectRatio: 0.714,
+        romPath: "/roms/zelda2.nes",
+      },
+    ],
+    onPlayGame() {
+      /* storybook action placeholder */
+    },
+  },
+  decorators: [
+    (Story) => (
+      <div className="p-8 bg-background min-h-screen">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cardTitles = () => getCardTitles(canvasElement);
+    const searchInput = canvas.getByPlaceholderText("Search games...");
+
+    // Abbreviation
+    await userEvent.type(searchInput, "lttp");
+    await waitFor(() => expect(cardTitles()[0]).toBe("The Legend of Zelda: A Link to the Past"));
+    await userEvent.clear(searchInput);
+
+    // Partial words
+    await userEvent.type(searchInput, "mega x");
+    await waitFor(() => expect(cardTitles()).toEqual(["Mega Man X"]));
+    await userEvent.clear(searchInput);
+
+    // Best match first, not title order
+    await userEvent.type(searchInput, "zelda");
+    await waitFor(() =>
+      expect(cardTitles()).toEqual([
+        "Zelda II: The Adventure of Link",
+        "The Legend of Zelda",
+        "The Legend of Zelda: A Link to the Past",
+      ]),
+    );
+
+    // No match
+    await userEvent.clear(searchInput);
+    await userEvent.type(searchInput, "xyzzy");
+    await waitFor(() => expect(canvas.queryAllByRole("button", { name: /^Play / })).toEqual([]));
+
+    // Empty query restores the title sort
+    await userEvent.clear(searchInput);
+    await waitFor(() => expect(cardTitles()).toHaveLength(10));
+    await expect(cardTitles()[0]).toBe("Castlevania");
+  },
+};
+
 /** No game has a genre (e.g. artwork never synced), so the genre Select is hidden. */
 export const NoGenres: Story = {
   args: {
