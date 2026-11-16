@@ -22,6 +22,7 @@ export * from "./components/GameLibrary";
 export * from "./components/ScrollLetterIndicator";
 export * from "./components/GameDetails";
 export * from "./components/ResumeGameDialog";
+export * from "./components/ArtworkSyncErrorDialog";
 export * from "./components/SystemDisambiguationDialog";
 export * from "./components/TVStatic";
 export * from "./components/PlatformIcon";

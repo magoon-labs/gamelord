@@ -51,6 +51,7 @@ import { modifierKey } from "../hooks/usePlatform";
 import { ROW_HEIGHT, MOSAIC_GAP, computeCardWidth } from "../utils/mosaicGrid";
 import { computeRowLayout } from "../utils/mosaicLayout";
 import { ALL_GENRES, filterByGenre, getGenres } from "../utils/genreFilter";
+import { searchByTitle } from "../utils/titleSearch";
 
 /** Threshold: lists larger than this use virtualized rendering. */
 const VIRTUALIZATION_THRESHOLD = 100;
@@ -165,16 +166,10 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
     return filters;
   }, [selectedPlatform, selectedGenre, showFavoritesOnly]);
 
-  // Filter and sort games
-  const filteredGames = useMemo(() => {
+  // Filter and sort games. Search runs in its own memo below, so a keystroke
+  // re-scores titles without re-sorting the library.
+  const sortedGames = useMemo(() => {
     let filtered = games;
-
-    // Search filter
-    if (searchQuery) {
-      filtered = filtered.filter((game) =>
-        game.title.toLowerCase().includes(searchQuery.toLowerCase()),
-      );
-    }
 
     // Platform filter
     if (selectedPlatform !== "all") {
@@ -259,7 +254,13 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
     }
 
     return filtered;
-  }, [games, searchQuery, selectedPlatform, selectedGenre, sortBy, showFavoritesOnly]);
+  }, [games, selectedPlatform, selectedGenre, sortBy, showFavoritesOnly]);
+
+  // Fuzzy title search: best match first, ties keep the selected sort.
+  const filteredGames = useMemo(
+    () => searchByTitle(sortedGames, searchQuery),
+    [sortedGames, searchQuery],
+  );
 
   // Build display items: real games interspersed with placeholder cards for missing discs.
   // Placeholders are purely UI — they don't affect filteredGames (used for FLIP/virtualization keys).
@@ -455,7 +456,8 @@ export const GameLibrary: React.FC<GameLibraryProps> = ({
     firstVisibleIndex,
     games: filteredGames,
     scrollTop,
-    sortBy,
+    // An active search orders by match score, not alphabetically.
+    sortBy: searchQuery ? "relevance" : sortBy,
   });
 
   return (

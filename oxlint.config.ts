@@ -8,6 +8,11 @@ export default defineConfig({
     node: true,
     es2024: true,
   },
+  // electron-vite writes a temporary bundled copy of its config next to it
+  // (`electron.vite.config.ts.<timestamp>-<hash>.mjs`) and deletes it when the
+  // build finishes. When turbo runs `bundle` beside `lint`, oxlint can list
+  // that file and then fail to open it.
+  ignorePatterns: ["**/*.config.ts.*.mjs"],
   rules: {
     // --- Deferred: adopt incrementally after migration ---
     // Sorting enforcement is too disruptive to adopt all at once.

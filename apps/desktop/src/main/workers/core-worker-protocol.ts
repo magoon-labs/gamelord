@@ -124,13 +124,7 @@ export type WorkerCommand =
   | { action: "setSpeed"; multiplier: number }
   | { action: "setFastForwardAudio"; enabled: boolean }
   | { action: "shutdown"; requestId: string }
-  | {
-      action: "setupSharedBuffers";
-      controlSAB: SharedArrayBuffer;
-      videoSAB: SharedArrayBuffer;
-      audioSAB: SharedArrayBuffer;
-      videoBufferSize: number;
-    }
+  | { action: "attachFramePort" }
   | { action: "cheatReset"; requestId: string }
   | {
       action: "cheatSet";
@@ -201,10 +195,13 @@ export function extractSerialFromLog(message: string): string | null {
 // Worker → Main events
 // ---------------------------------------------------------------------------
 
+/** Sent directly from the worker to the game window, bypassing the main process. */
+export type FramePortMessage =
+  | { type: "videoFrame"; data: Uint8Array; width: number; height: number }
+  | { type: "audioSamples"; samples: Int16Array; sampleRate: number };
+
 export type WorkerEvent =
   | { type: "ready"; avInfo: AVInfo; saveStatesSupported: boolean }
-  | { type: "videoFrame"; data: Buffer; width: number; height: number }
-  | { type: "audioSamples"; samples: Buffer; sampleRate: number }
   | { type: "error"; message: string; fatal: boolean }
   | { type: "log"; level: number; message: string }
   | { type: "speedChanged"; multiplier: number }

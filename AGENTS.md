@@ -6,7 +6,7 @@ At the start of every new conversation, before doing anything else:
 
 1. **Sync with latest main:**
    - **Normal repo:** `git fetch origin && git checkout main && git pull origin main`
-   - **Worktree** (detected by path containing `.claude/worktrees/`): `git fetch origin && git rebase origin/main` — you cannot checkout main in a worktree because it's already checked out by the main repo.
+   - **Worktree** (`.git` is a file, e.g. under `~/.t3/worktrees/` or `.claude/worktrees/`): worktrees can start from an old commit. For new work, `git fetch origin && git checkout -b <type>/<name> origin/main`; to continue a branch, `git fetch origin && git rebase origin/main`. You can't check out `main` in a worktree, because the main repo already has it checked out.
 2. If there are stashed or uncommitted changes from a previous session, surface them to the user and ask what to do (keep, drop, or stash).
 3. Read `ARCHITECTURE.md` for project context. Check GitHub Issues for current work items.
 
@@ -65,6 +65,7 @@ This project uses **pnpm**. Always use `pnpm` for installing dependencies, runni
 ## Merging
 
 - `main` uses a merge queue. Merge a green PR with `gh pr merge <N>` (no strategy flag; the queue squashes). PRs can enter the queue while BEHIND, so don't update branches first.
+- If a queue entry is dropped, read the `RemovedFromMergeQueueEvent` reason (e.g. `merge_conflict` on stacked lockfile changes).
 - If required check names changed, a green PR can sit BEHIND and never queue, and re-runs won't help. Merge `origin/main` into the branch so CI uses the new workflow. To diagnose, compare `gh pr checks N` with `gh api repos/magoon-labs/gamelord/rules/branches/main`.
 - Agents may merge low-risk PRs without asking: required checks green, no unresolved review comments, and either our own non-visual change that meets its acceptance criteria, a verified Dependabot batch (majors smoke-tested in the dev app), or a small, clearly correct fix.
 - Ask first for visual/UI changes, external contributor PRs, CI/release/workflow/secrets changes, architecture or product decisions, feature removals, and emulation loop, native addon, shader or frame-pacing work.
@@ -76,30 +77,6 @@ Several agents often work here at once, including a daily maintenance thread tha
 ## Vercel CI
 
 Vercel CI doesn't run on public repos, and `vercel ci enable` still succeeds. If a setup produces no runs, call `vercel api "/v1/vercel-ci/task-analyses?teamId=<team>" --method POST` with `{"owner","repo"}`, which returns the real reason. Parked in #554.
-
-## Design Philosophy
-
-- **Extremely polished UI.** Every interaction should feel intentional and delightful. Prioritize craft and attention to detail — this is a desktop app, not a throwaway prototype.
-- **Microinteractions and animations.** Use tasteful transitions, hover effects, loading states, and motion to make the app feel alive. Think about easing curves, staggered animations, and subtle feedback on every click, toggle, and navigation.
-- **Ideate novel flourishes.** When implementing a feature, proactively suggest creative UI touches — e.g. a CRT power-on animation when launching a game, particle effects on achievements, satisfying haptic-style feedback on button presses, ambient glow effects. Propose these ideas to the user before implementing.
-
-## Storybook Coverage
-
-All UI components with loading, error, or transitional states **must** have Storybook stories representing each state. This makes states easy to polish, iterate on, and visually verify without needing to reproduce them in the running app. Examples: artwork sync phases (hashing, querying, downloading, done, error, not-found), empty/loading library, form validation errors.
-
-## Performance — Frame Rate is Sacred
-
-Emulation frame pacing is a top-tier concern. Every code change — especially in the renderer, game window, and emulation loop — must be evaluated for its impact on consistent frame delivery. The app must look and feel smooth on 120Hz+ displays.
-
-### Rules
-
-- **No `backdrop-filter` or `backdrop-blur` in the game window.** These force expensive GPU compositing every frame and compete with the WebGL shader pipeline. Use solid or semi-transparent backgrounds instead. Backdrop effects are fine in the library UI where frame pacing doesn't matter.
-- **No expensive CSS effects layered over the game canvas.** Avoid `box-shadow` animations, large `filter: blur()`, or CSS `transform` animations on elements that overlap the canvas during gameplay. Static transforms and opacity transitions are acceptable.
-- **Renderer draws must be synced to `requestAnimationFrame`.** Never draw to WebGL directly from an IPC event handler. Buffer the latest frame and draw it in the next rAF callback to align with the display's vsync.
-- **Emulation timing must not rely on `setTimeout`/`setInterval` precision.** These have ~4ms minimum granularity and jitter under load. The emulation loop runs in a dedicated Electron utility process (`core-worker.ts`) with hybrid sleep+spin frame pacing.
-- **Profile before adding multi-pass shaders.** Any shader preset with 3+ passes must be tested on integrated GPUs (e.g. Apple M-series) to confirm it maintains 60fps. Include lighter alternatives users can fall back to.
-- **Measure, don't guess.** When in doubt about a change's performance impact, add a temporary FPS/frame-time counter and test with a real game running. Don't ship code that "should be fine" without verification.
-- **Pause-state effects are exempt.** When the emulation loop is stopped (paused, menu open, etc.), the GPU is idle and expensive cosmetic effects (VHS distortion, scanline drift, static overlays) are fair game. The performance rules above apply to effects running _during active gameplay_.
 
 ## Responsiveness — Never Block the UI
 

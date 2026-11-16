@@ -194,13 +194,9 @@ export interface GamelordAPI {
   sentryEnabled: boolean;
 
   // Game input (native mode)
+  notifyGameWindowReady: () => void;
   gameInput: (port: number, id: number, pressed: boolean) => void;
   gameInputAnalog: (port: number, index: number, id: number, value: number) => void;
-
-  // SharedArrayBuffer delivery via MessagePort bridge
-  framePort: {
-    onMessage: (callback: (data: unknown) => void) => void;
-  };
 
   // Signal to the main process that the renderer has loaded and is ready to show.
   contentReady: () => void;

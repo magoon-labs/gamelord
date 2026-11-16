@@ -10,10 +10,11 @@ Before manually testing any emulator functionality, ensure the native addon is b
 
 ## Worktree Setup
 
-When working in a git worktree (`.claude/worktrees/`), dependencies and build artifacts are not shared with the main repo. After `pnpm install`, run:
+When working in a git worktree (`~/.t3/worktrees/` or `.claude/worktrees/`), dependencies and build artifacts are not shared with the main repo. After `pnpm install --frozen-lockfile`, run:
 
 1. **`./scripts/setup-worktree.sh`** — Symlinks `.env` and any other shared files from the main repo. Safe to run multiple times. This replaces the manual symlink step.
 2. **Build the native addon** (see above).
+3. **Install the Electron binary** if you will launch the app: `cd apps/desktop && node node_modules/electron/install.js`.
 
 ### Rename auto-generated worktree branches
 

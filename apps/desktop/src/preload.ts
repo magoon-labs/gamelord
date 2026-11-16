@@ -1,25 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { SENTRY_ENABLED_ARG } from "./types/sentry";
+import { GAME_FRAME_PORT_MESSAGE } from "./types/gameFramePort";
 
-// ---------------------------------------------------------------------------
-// SharedArrayBuffer MessagePort bridge
-// ---------------------------------------------------------------------------
-// contextBridge cannot transfer SharedArrayBuffer directly. The main process
-// sends a MessagePort via webContents.postMessage, then sends the SABs through
-// that port. We expose a simple onMessage callback for the renderer to consume.
-
-let framePortCallback: ((data: unknown) => void) | null = null;
-
-ipcRenderer.on("game:shared-frame-port", (event) => {
-  const [port] = event.ports;
-  if (!port) {
-    return;
-  }
-
-  port.onmessage = (ev: MessageEvent) => {
-    framePortCallback?.(ev.data);
-  };
-  port.start();
+// Hands the worker's video and audio port to the page. It goes through
+// window.postMessage because contextBridge would copy every frame.
+ipcRenderer.on("game:frame-port", (event) => {
+  window.postMessage(GAME_FRAME_PORT_MESSAGE, "*", event.ports);
 });
 
 // Expose protected APIs to the renderer process
@@ -104,6 +90,7 @@ contextBridge.exposeInMainWorld("gamelord", {
   tick: () => ipcRenderer.invoke("game:tick"),
 
   // Game input forwarding (native mode)
+  notifyGameWindowReady: () => ipcRenderer.send("game:renderer-ready"),
   gameInput: (port: number, id: number, pressed: boolean) =>
     ipcRenderer.send("game:input", port, id, pressed),
   gameInputAnalog: (port: number, index: number, id: number, value: number) =>
@@ -129,8 +116,6 @@ contextBridge.exposeInMainWorld("gamelord", {
       "game:av-info",
       "game:save-states-supported",
       "game:disc-info",
-      "game:video-frame",
-      "game:audio-samples",
       "overlay:show-controls",
       "core:downloadProgress",
       "cheats:downloadProgress",
@@ -219,13 +204,6 @@ contextBridge.exposeInMainWorld("gamelord", {
     isCredentialPromptDismissed: () =>
       ipcRenderer.invoke("artwork:isCredentialPromptDismissed") as Promise<boolean>,
     dismissCredentialPrompt: () => ipcRenderer.invoke("artwork:dismissCredentialPrompt"),
-  },
-
-  // SharedArrayBuffer frame port (zero-copy frame/audio transfer)
-  framePort: {
-    onMessage: (callback: (data: unknown) => void) => {
-      framePortCallback = callback;
-    },
   },
 
   // Platform info for conditional UI (e.g. window controls on non-macOS)
