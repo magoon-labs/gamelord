@@ -197,8 +197,24 @@ export function extractSerialFromLog(message: string): string | null {
 
 /** Sent directly from the worker to the game window, bypassing the main process. */
 export type FramePortMessage =
-  | { type: "videoFrame"; data: Uint8Array; width: number; height: number }
+  | {
+      type: "videoFrame";
+      data: Uint8Array;
+      width: number;
+      height: number;
+      /** The refresh this frame was run for (epoch ms), when locked to the display. */
+      targetTime?: number;
+    }
   | { type: "audioSamples"; samples: Int16Array; sampleRate: number };
+
+/** Sent from the game window back to the worker on the same port. */
+export type GameWindowPortMessage = {
+  type: "vsync";
+  /** The requestAnimationFrame timestamp (epoch ms). */
+  time: number;
+  /** A frame meant for an earlier refresh missed it. */
+  late: boolean;
+};
 
 export type WorkerEvent =
   | { type: "ready"; avInfo: AVInfo; saveStatesSupported: boolean }

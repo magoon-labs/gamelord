@@ -13,11 +13,13 @@ import type {
   NativeAddon,
   NativeLibretroCore,
   FramePortMessage,
+  GameWindowPortMessage,
   WorkerCommand,
   WorkerEvent,
   AVInfo,
 } from "./core-worker-protocol";
 import { filterForwardableLogs, extractSerialFromLog } from "./core-worker-protocol";
+import { DisplayLock } from "./display-lock";
 import { listSaveStates, writeSaveState } from "./save-state-files";
 import type { RgbaFrame } from "./save-state-thumbnail";
 
@@ -58,6 +60,14 @@ const MAX_CONSECUTIVE_ERRORS = 5;
 // Direct line to the game window for video and audio. Output is dropped until
 // the window has connected, since it has nowhere to draw before that.
 let framePort: Electron.MessagePortMain | null = null;
+
+// Learns the game window's refresh timing so core frames can run just before
+// each refresh. Recreated for each game, since it depends on the core's rate.
+let displayLock = new DisplayLock(60);
+let lastLockState = "";
+// The refresh the next core frame is scheduled for, when locked.
+let scheduledRefresh: number | undefined;
+const epochNow = () => performance.timeOrigin + performance.now();
 
 // Spin threshold: busy-wait the last N ms of each frame for precise timing
 const SPIN_THRESHOLD_MS = 2;
@@ -276,6 +286,8 @@ function initialize(command: Extract<WorkerCommand, { action: "init" }>): void {
     targetFps = avInfo.timing.fps || 60;
     sampleRate = avInfo.timing.sampleRate || 44_100;
   }
+  displayLock = new DisplayLock(targetFps);
+  lastLockState = "";
 
   isRunning = true;
   isPaused = false;
@@ -296,17 +308,38 @@ function sendToGameWindow(message: FramePortMessage): void {
   framePort?.postMessage(message);
 }
 
-function sendVideoFrame(frame: { data: Uint8Array; width: number; height: number }): void {
+function sendVideoFrame(
+  frame: { data: Uint8Array; width: number; height: number },
+  targetTime?: number,
+): void {
   sendToGameWindow({
     type: "videoFrame",
     data: frame.data,
     width: frame.width,
     height: frame.height,
+    targetTime,
   });
 }
 
-function sendAudioSamples(samples: Int16Array): void {
-  sendToGameWindow({ type: "audioSamples", samples, sampleRate });
+function sendAudioSamples(samples: Int16Array, rate = sampleRate): void {
+  sendToGameWindow({ type: "audioSamples", samples, sampleRate: rate });
+}
+
+/** Logs when the display lock engages, changes or drops, for debugging. */
+function reportLockState(now: number): void {
+  const state = displayLock.state(now);
+  const key = state.locked ? `on:${state.refreshesPerFrame}` : "off";
+  if (key === lastLockState) {
+    return;
+  }
+  lastLockState = key;
+  send({
+    type: "log",
+    level: 1,
+    message: state.locked
+      ? `Display lock on: ${state.displayHz.toFixed(2)} Hz, ${state.refreshesPerFrame} refresh(es) per frame`
+      : "Display lock off: using the free-running timer",
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +356,7 @@ function startEmulationLoop(): void {
   // buffer underruns periodically causing audible gaps.
   const basePeriod = 1000 / targetFps;
   let nextFrameTime = performance.now() + basePeriod;
+  scheduledRefresh = undefined;
 
   /** Drain buffered log messages. Also checks for late serial detection
    *  (some cores like SwanStation log the disc serial during the first
@@ -458,7 +492,9 @@ function startEmulationLoop(): void {
       nextFrameTime = now + basePeriod;
     }
 
+    const refreshAt = scheduledRefresh;
     if (!isPaused && native) {
+      const runStart = performance.now();
       try {
         native.run();
         consecutiveErrors = 0;
@@ -486,17 +522,28 @@ function startEmulationLoop(): void {
       const frame = native.getVideoFrame();
       if (frame) {
         lastFrame = frame;
-        sendVideoFrame(frame);
+        sendVideoFrame(frame, refreshAt);
       }
 
-      // Send audio samples (only at 1x speed)
+      // Send audio samples (only at 1x speed). While locked, frames play at
+      // the display's rate, so the samples play at a matching rate.
       const audio = native.getAudioBuffer();
       if (audio && audio.length > 0) {
-        sendAudioSamples(audio);
+        sendAudioSamples(audio, displayLock.audioSampleRate(sampleRate, epochNow()));
       }
 
+      displayLock.recordRunCost(performance.now() - runStart);
       drainLogs();
     }
+
+    // Run the next frame just before a display refresh when the lock applies.
+    const epoch = epochNow();
+    const next = speedMultiplier === 1 ? displayLock.nextRun(epoch) : null;
+    scheduledRefresh = next?.refreshAt;
+    if (next) {
+      nextFrameTime = next.runAt - performance.timeOrigin;
+    }
+    reportLockState(epoch);
 
     scheduleNext();
   };
@@ -806,6 +853,13 @@ process.parentPort.on("message", (event: Electron.MessageEvent) => {
   const command = event.data as WorkerCommand;
   if (command.action === "attachFramePort") {
     framePort = event.ports[0];
+    framePort.on("message", ({ data }: Electron.MessageEvent) => {
+      const message = data as GameWindowPortMessage;
+      if (message.type === "vsync") {
+        displayLock.onVsync(message.time, message.late);
+      }
+    });
+    framePort.start();
     return;
   }
   handleMessage(command);

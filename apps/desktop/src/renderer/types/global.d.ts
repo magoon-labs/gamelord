@@ -210,6 +210,8 @@ export interface VideoFrame {
   width: number;
   height: number;
   timestamp?: number;
+  /** The display refresh the frame was run for (epoch ms), when locked to the display. */
+  targetTime?: number;
 }
 
 export interface AudioSamples {
