@@ -117,6 +117,7 @@ interface MockLibraryService {
   removeSystem: ReturnType<typeof vi.fn>;
   updateSystemPath: ReturnType<typeof vi.fn>;
   getGames: ReturnType<typeof vi.fn>;
+  getGame: ReturnType<typeof vi.fn>;
   addGame: ReturnType<typeof vi.fn>;
   removeGame: ReturnType<typeof vi.fn>;
   updateGame: ReturnType<typeof vi.fn>;
@@ -237,6 +238,7 @@ beforeEach(() => {
       removeSystem: vi.fn(),
       updateSystemPath: vi.fn(),
       getGames: vi.fn(() => []),
+      getGame: vi.fn(),
       addGame: vi.fn(),
       removeGame: vi.fn(),
       updateGame: vi.fn(),
@@ -557,6 +559,7 @@ describe("IPCHandlers", () => {
 
         expect(libraryServiceInstance.updateGame).toHaveBeenCalledWith("game-1", {
           lastPlayed: expect.any(Date),
+          playCount: 1,
         });
       });
 
@@ -571,7 +574,7 @@ describe("IPCHandlers", () => {
 
         expect(send).toHaveBeenCalledWith("library:gameUpdated", {
           gameId: "game-1",
-          updates: { lastPlayed: expect.any(Date) },
+          updates: { lastPlayed: expect.any(Date), playCount: 1 },
         });
       });
 
@@ -626,6 +629,86 @@ describe("IPCHandlers", () => {
         const result = await getHandler("emulator:launch")(fakeEvent, "/roms/smb.nes", "nes");
 
         expect(result).toEqual({ success: true });
+      });
+    });
+
+    describe("playCount", () => {
+      /** Library games by id; `getGame` reads the live object like the real service. */
+      let library: Map<string, Game>;
+
+      const setUpNativeLaunch = (game: Game) => {
+        library = new Map([[game.id, { ...game }]]);
+        libraryServiceInstance.getGames.mockImplementation(() => [...library.values()]);
+        libraryServiceInstance.getGame.mockImplementation((id: string) => library.get(id));
+        libraryServiceInstance.updateGame.mockImplementation(
+          async (id: string, updates: Partial<Game>) => {
+            const stored = library.get(id);
+            if (stored) {
+              Object.assign(stored, updates);
+            }
+          },
+        );
+        emulatorManagerInstance.launchGame.mockResolvedValue(undefined);
+        emulatorManagerInstance.isNativeMode.mockReturnValue(true);
+        emulatorManagerInstance.getCurrentEmulator.mockReturnValue({
+          hasAutoSave: vi.fn(() => false),
+          deleteAutoSave: vi.fn(),
+          getCorePath: vi.fn(() => "/cores/fceumm.dylib"),
+          getRomPath: vi.fn(() => "/roms/smb.nes"),
+          getSystemDir: vi.fn(() => "/bios"),
+          getSaveDir: vi.fn(() => "/saves"),
+          getSramDir: vi.fn(() => "/saves"),
+          getSaveStatesDir: vi.fn(() => "/savestates"),
+        });
+        gameWindowManagerInstance.createNativeGameWindow.mockReturnValue({});
+      };
+
+      const launch = () => getHandler("emulator:launch")(fakeEvent, "/roms/smb.nes", "nes");
+
+      it("counts the first successful launch as 1 and the next as 2", async () => {
+        setUpNativeLaunch(fakeGame);
+
+        expect(await launch()).toEqual({ success: true });
+        expect(library.get("game-1")?.playCount).toBe(1);
+
+        expect(await launch()).toEqual({ success: true });
+        expect(library.get("game-1")?.playCount).toBe(2);
+      });
+
+      it("leaves playCount and lastPlayed unchanged when the launch fails", async () => {
+        const lastPlayed = new Date("2026-03-14T15:09:26.535Z");
+        setUpNativeLaunch({ ...fakeGame, playCount: 3, lastPlayed });
+        vi.mocked(EmulationWorkerClient).mockImplementationOnce(function (
+          this: Record<string, unknown>,
+        ) {
+          Object.assign(this, { init: vi.fn().mockRejectedValue(new Error("Core crashed")) });
+          return this as unknown as EmulationWorkerClient;
+        } as unknown as () => EmulationWorkerClient);
+
+        expect(await launch()).toEqual({ success: false, error: "Core crashed" });
+
+        expect(libraryServiceInstance.updateGame).not.toHaveBeenCalled();
+        expect(library.get("game-1")).toMatchObject({ playCount: 3, lastPlayed });
+      });
+
+      it("sends lastPlayed and playCount together in one library:gameUpdated event", async () => {
+        setUpNativeLaunch({ ...fakeGame, playCount: 4 });
+        const send = vi.fn();
+        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+          { webContents: { send } } as unknown as BrowserWindowType,
+        ]);
+
+        await launch();
+
+        const gameUpdates = send.mock.calls.filter(
+          ([channel]) => channel === "library:gameUpdated",
+        );
+        expect(gameUpdates).toEqual([
+          [
+            "library:gameUpdated",
+            { gameId: "game-1", updates: { lastPlayed: expect.any(Date), playCount: 5 } },
+          ],
+        ]);
       });
     });
 

@@ -1448,6 +1448,31 @@ describe("LibraryService", () => {
       fs.unlinkSync(romPath);
     });
 
+    it("persists playCount and loads entries saved without it", async () => {
+      const romPath = path.join(ROMS_DIR, "play_count.nes");
+      const otherRomPath = path.join(ROMS_DIR, "no_play_count.nes");
+      fs.writeFileSync(romPath, "play-count-content");
+      fs.writeFileSync(otherRomPath, "no-play-count-content");
+
+      const first = await createService();
+      const counted = await first.addGame(romPath, "nes");
+      const uncounted = await first.addGame(otherRomPath, "nes");
+      await first.updateGame(counted!.id, { playCount: 2 });
+
+      // Entries never launched carry no playCount key on disk
+      const onDisk: Array<Record<string, unknown>> = JSON.parse(
+        fs.readFileSync(path.join(USER_DATA_DIR, "library.json"), "utf8"),
+      );
+      expect(onDisk.find((g) => g.id === uncounted!.id)).not.toHaveProperty("playCount");
+
+      const second = await createService();
+      expect(second.getGame(counted!.id)?.playCount).toBe(2);
+      expect(second.getGame(uncounted!.id)?.playCount).toBeUndefined();
+
+      fs.unlinkSync(romPath);
+      fs.unlinkSync(otherRomPath);
+    });
+
     it("drops an unparseable lastPlayed instead of loading an Invalid Date", async () => {
       const romPath = path.join(ROMS_DIR, "bad_last_played.nes");
       const content = "bad-last-played-content";
