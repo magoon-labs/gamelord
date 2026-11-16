@@ -57,6 +57,8 @@ export interface Game {
     players?: number;
     rating?: number;
   };
+  /** Number of successful launches. Absent in libraries saved before it existed. */
+  playCount?: number;
   playTime?: number;
   romHashes: {
     crc32: string;

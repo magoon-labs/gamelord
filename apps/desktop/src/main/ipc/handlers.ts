@@ -1033,12 +1033,14 @@ export class IPCHandlers {
   }
 
   /**
-   * Stamp a game's lastPlayed after a successful launch, persist it, and push
-   * the change to renderer windows so the library view updates in place.
-   * A failed write is logged rather than failing a launch that already worked.
+   * Stamp a game's lastPlayed and bump its playCount after a successful
+   * launch, in one write and one broadcast so the library view updates in
+   * place. A failed write is logged rather than failing a launch that already
+   * worked.
    */
   private async recordLastPlayed(gameId: string): Promise<void> {
-    await this.persistGameUpdate(gameId, { lastPlayed: new Date() });
+    const playCount = (this.libraryService.getGame(gameId)?.playCount ?? 0) + 1;
+    await this.persistGameUpdate(gameId, { lastPlayed: new Date(), playCount });
   }
 
   /**

@@ -22,6 +22,8 @@ export interface Game {
   id: string;
   lastPlayed?: Date;
   platform: string;
+  /** Number of successful launches. */
+  playCount?: number;
   playTime?: number;
   /** Community rating on a 0–1 scale, when known. */
   rating?: number;
