@@ -8,18 +8,29 @@ export interface ControlsOverlayProps {
   onClose: () => void;
   /** Keyboard-to-button bindings to display. Derived from the emulator's actual KEY_MAP. */
   bindings: ReadonlyArray<KeyboardBinding>;
+  /**
+   * Whether the current game has more than one disc. The F6 disc swap
+   * shortcut only does something for multi-disc games, so it's listed only then.
+   */
+  hasMultipleDiscs?: boolean;
 }
 
 interface ShortcutMapping {
-  key: string;
+  /** Keys that trigger the shortcut, rendered as separate badges. */
+  keys: ReadonlyArray<string>;
   label: string;
+  /** Listed only when the current game has more than one disc. */
+  multiDiscOnly?: boolean;
 }
 
-const SHORTCUTS: Array<ShortcutMapping> = [
-  { key: "Space", label: "Pause" },
-  { key: "Tab", label: "Fast-forward" },
-  { key: "F5", label: "Save State" },
-  { key: "F9", label: "Load State" },
+/** Mirrors the game window's keyboard shortcut handler. */
+const SHORTCUTS: ReadonlyArray<ShortcutMapping> = [
+  { keys: ["Space"], label: "Pause" },
+  { keys: ["Tab"], label: "Fast-forward" },
+  { keys: ["F5"], label: "Save State" },
+  { keys: ["F9"], label: "Load State" },
+  { keys: ["F6"], label: "Disc Swap", multiDiscOnly: true },
+  { keys: ["F1", "?"], label: "Controls" },
 ];
 
 /**
@@ -29,7 +40,12 @@ const SHORTCUTS: Array<ShortcutMapping> = [
  */
 const UNMOUNT_DELAY = 220;
 
-export const ControlsOverlay: React.FC<ControlsOverlayProps> = ({ open, onClose, bindings }) => {
+export const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
+  open,
+  onClose,
+  bindings,
+  hasMultipleDiscs = false,
+}) => {
   // Delayed unmount: keep the DOM alive while exit animations play.
   const [mounted, setMounted] = useState(open);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -78,6 +94,7 @@ export const ControlsOverlay: React.FC<ControlsOverlayProps> = ({ open, onClose,
   }
 
   const closing = !open && mounted;
+  const shortcuts = SHORTCUTS.filter((shortcut) => !shortcut.multiDiscOnly || hasMultipleDiscs);
 
   return (
     <div
@@ -103,9 +120,15 @@ export const ControlsOverlay: React.FC<ControlsOverlayProps> = ({ open, onClose,
         {/* Shortcuts */}
         <div className="border-t border-white/10 mt-4 pt-3">
           <div className="flex items-center justify-center gap-4 flex-wrap">
-            {SHORTCUTS.map((shortcut) => (
-              <div key={shortcut.key} className="flex items-center gap-1.5">
-                <KeyBadge>{shortcut.key}</KeyBadge>
+            {shortcuts.map((shortcut) => (
+              <div
+                key={shortcut.label}
+                className="flex items-center gap-1.5"
+                data-testid={`shortcut-${shortcut.keys.join("-")}`}
+              >
+                {shortcut.keys.map((key) => (
+                  <KeyBadge key={key}>{key}</KeyBadge>
+                ))}
                 <span className="text-xs text-white/50">{shortcut.label}</span>
               </div>
             ))}

@@ -69,6 +69,22 @@ describe("ControlsOverlay", () => {
       expect(screen.getByText("Load State")).toBeInTheDocument();
     });
 
+    it("lists the controls overlay shortcut (F1 or ?)", () => {
+      renderOverlay();
+      expect(screen.getByTestId("shortcut-F1-?")).toHaveTextContent("F1?Controls");
+    });
+
+    it("hides the disc swap shortcut (F6) for single-disc games", () => {
+      renderOverlay();
+      expect(screen.queryByTestId("shortcut-F6")).toBeNull();
+      expect(screen.queryByText("Disc Swap")).toBeNull();
+    });
+
+    it("lists the disc swap shortcut (F6) for multi-disc games", () => {
+      renderOverlay({ hasMultipleDiscs: true });
+      expect(screen.getByTestId("shortcut-F6")).toHaveTextContent("F6Disc Swap");
+    });
+
     it("has proper ARIA attributes", () => {
       renderOverlay();
       const dialog = screen.getByRole("dialog");

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { expect, fn, within } from "storybook/test";
 import { ControlsOverlay } from "./ControlsOverlay";
 import type { KeyboardBinding } from "./controller-layouts";
 import { filterBindingsForSystem } from "./controller-layouts";
@@ -54,8 +54,15 @@ const meta: Meta<typeof ControlsOverlay> = {
 export default meta;
 type Story = StoryObj<typeof ControlsOverlay>;
 
-/** SNES — all standard buttons. */
-export const Open: Story = {};
+/** SNES — all standard buttons. Single-disc game, so F6 (disc swap) is not listed. */
+export const Open: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId("shortcut-F1-?")).toHaveTextContent("F1?Controls");
+    await expect(canvas.queryByTestId("shortcut-F6")).not.toBeInTheDocument();
+    await expect(canvas.queryByText("Disc Swap")).not.toBeInTheDocument();
+  },
+};
 
 export const Closed: Story = {
   args: {
@@ -86,6 +93,19 @@ export const N64: Story = {
 /** PS1 — all standard buttons. */
 export const PS1: Story = {
   args: { bindings: filterBindingsForSystem(ALL_BINDINGS, "psx") },
+};
+
+/** PS1 multi-disc game — lists the F6 disc swap shortcut alongside the others. */
+export const PS1MultiDisc: Story = {
+  args: { bindings: filterBindingsForSystem(ALL_BINDINGS, "psx"), hasMultipleDiscs: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId("shortcut-F6")).toHaveTextContent("F6Disc Swap");
+    await expect(canvas.getByTestId("shortcut-F1-?")).toHaveTextContent("F1?Controls");
+    for (const label of ["Pause", "Fast-forward", "Save State", "Load State"]) {
+      await expect(canvas.getByText(label)).toBeInTheDocument();
+    }
+  },
 };
 
 export const NoBindings: Story = {
