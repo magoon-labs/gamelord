@@ -11,6 +11,7 @@ import {
 import path from "node:path";
 import { setupAppMenu } from "./main/appMenu";
 import { createArtworkProtocolHandler } from "./main/artworkProtocol";
+import { registerDemoRecorderCapture } from "./main/demoRecorder";
 import { IPCHandlers } from "./main/ipc/handlers";
 import { mainLog } from "./main/logger";
 import { AutoUpdaterService } from "./main/services/AutoUpdaterService";
@@ -173,6 +174,12 @@ app.on("ready", () => {
     }
     callback(true);
   });
+
+  // Dev-only: let scripts/record-demo.mjs capture the app with getDisplayMedia.
+  // Inert in packaged builds and unless GAMELORD_DEMO_RECORDER=1.
+  if (registerDemoRecorderCapture(session.defaultSession, app.isPackaged, process.env)) {
+    mainLog.info("Demo recorder enabled: getDisplayMedia auto-approves the requesting frame");
+  }
 
   // Register artwork:// protocol to serve cached cover art images.
   protocol.handle(
