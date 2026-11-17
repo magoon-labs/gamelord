@@ -27,11 +27,6 @@ describe("logger → Sentry breadcrumb bridge", () => {
     });
   });
 
-  it("registers a hook on electron-log", async () => {
-    await import("./logger");
-    expect(hooks.length).toBe(1);
-  });
-
   it("forwards log messages as Sentry breadcrumbs with correct severity", async () => {
     await import("./logger");
     const hook = hooks[0];

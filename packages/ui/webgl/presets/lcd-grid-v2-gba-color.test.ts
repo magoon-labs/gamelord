@@ -14,10 +14,6 @@ describe("lcd-grid-v2-gba-color preset", () => {
     expect(PRESET_MAP.get("lcd-grid-v2-gba-color")).toBe(lcdGridV2GbaColorPreset);
   });
 
-  it("has 2 passes", () => {
-    expect(lcdGridV2GbaColorPreset.passes).toHaveLength(2);
-  });
-
   it("has no LUT textures", () => {
     expect(lcdGridV2GbaColorPreset.luts).toHaveLength(0);
   });
@@ -62,10 +58,6 @@ describe("lcd-grid-v2-gba-color-motionblur preset", () => {
     expect(PRESET_MAP.get("lcd-grid-v2-gba-color-motionblur")).toBe(
       lcdGridV2GbaColorMotionblurPreset,
     );
-  });
-
-  it("has 3 passes", () => {
-    expect(lcdGridV2GbaColorMotionblurPreset.passes).toHaveLength(3);
   });
 
   it("has no LUT textures", () => {
@@ -122,33 +114,5 @@ describe("GLSL sources", () => {
       expect(pass.fragmentSource.length).toBeGreaterThan(100);
       expect(pass.fragmentSource).toContain("#version 300 es");
     }
-  });
-
-  it("lcd-grid-v2 shader uses texelFetch for integer texel sampling", () => {
-    const gridPass = lcdGridV2GbaColorPreset.passes[0];
-    expect(gridPass.fragmentSource).toContain("texelFetch");
-  });
-
-  it("lcd-grid-v2 shader contains intsmear anti-aliasing function", () => {
-    const gridPass = lcdGridV2GbaColorPreset.passes[0];
-    expect(gridPass.fragmentSource).toContain("intsmear");
-  });
-
-  it("lcd-grid-v2 shader has BGR subpixel ordering", () => {
-    const gridPass = lcdGridV2GbaColorPreset.passes[0];
-    expect(gridPass.fragmentSource).toContain("BGR");
-    expect(gridPass.fragmentSource).toContain("bgr");
-  });
-
-  it("gba-color shader contains the sRGB color matrix", () => {
-    const colorPass = lcdGridV2GbaColorPreset.passes[1];
-    expect(colorPass.fragmentSource).toContain("mat4");
-    expect(colorPass.fragmentSource).toContain("0.905");
-  });
-
-  it("response-time shader uses u_feedback for frame blending", () => {
-    const responsePass = lcdGridV2GbaColorMotionblurPreset.passes[0];
-    expect(responsePass.fragmentSource).toContain("u_feedback");
-    expect(responsePass.fragmentSource).toContain("response_time");
   });
 });

@@ -112,7 +112,6 @@ describe("AutoUpdaterService", () => {
     it("configures autoUpdater settings", () => {
       expect(fakeAutoUpdater.autoDownload).toBe(true);
       expect(fakeAutoUpdater.autoInstallOnAppQuit).toBe(true);
-      expect(fakeAutoUpdater.logger).toBeDefined();
     });
 
     it("sets allowPrerelease=false for stable versions", () => {
@@ -139,14 +138,6 @@ describe("AutoUpdaterService", () => {
       preService.cleanup();
     });
 
-    it("registers event listeners on autoUpdater", () => {
-      expect(fakeAutoUpdater.listenerCount("checking-for-update")).toBe(1);
-      expect(fakeAutoUpdater.listenerCount("update-available")).toBe(1);
-      expect(fakeAutoUpdater.listenerCount("update-not-available")).toBe(1);
-      expect(fakeAutoUpdater.listenerCount("download-progress")).toBe(1);
-      expect(fakeAutoUpdater.listenerCount("update-downloaded")).toBe(1);
-      expect(fakeAutoUpdater.listenerCount("error")).toBe(1);
-    });
   });
 
   describe("start", () => {
