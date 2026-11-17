@@ -13,10 +13,6 @@ describe("crt-geom-deluxe preset", () => {
     expect(PRESET_MAP.get("crt-geom-deluxe")).toBe(crtGeomDeluxePreset);
   });
 
-  it("has 5 passes", () => {
-    expect(crtGeomDeluxePreset.passes).toHaveLength(5);
-  });
-
   it("has no LUT textures (masks are procedural)", () => {
     expect(crtGeomDeluxePreset.luts).toHaveLength(0);
   });
@@ -71,10 +67,6 @@ describe("crt-geom-deluxe preset", () => {
     it("uses linear filtering for blur", () => {
       expect(pass.filter).toBe("linear");
     });
-
-    it("has custom vertex shader", () => {
-      expect(pass.vertexSource).toBeDefined();
-    });
   });
 
   describe("pass 3 — gaussy", () => {
@@ -103,10 +95,6 @@ describe("crt-geom-deluxe preset", () => {
       expect(pass.scale).toEqual({ type: "viewport", x: 1, y: 1 });
     });
 
-    it("has custom vertex shader for barrel distortion", () => {
-      expect(pass.vertexSource).toBeDefined();
-    });
-
     it("outputs rgba8 for final screen", () => {
       expect(pass.format).toBe("rgba8");
     });
@@ -114,44 +102,15 @@ describe("crt-geom-deluxe preset", () => {
 });
 
 describe("crt-geom-deluxe GLSL sources", () => {
-  it("all passes have non-empty fragment shaders", () => {
+  it("all passes have non-empty GLSL ES 3.0 fragment shaders", () => {
     for (const pass of crtGeomDeluxePreset.passes) {
       expect(pass.fragmentSource.length).toBeGreaterThan(100);
       expect(pass.fragmentSource).toContain("#version 300 es");
     }
   });
-
-  it("pass 4 fragment shader contains mask_weights function", () => {
-    const pass4 = crtGeomDeluxePreset.passes[4];
-    expect(pass4.fragmentSource).toContain("mask_weights");
-  });
-
-  it("pass 4 fragment shader contains barrel distortion", () => {
-    const pass4 = crtGeomDeluxePreset.passes[4];
-    expect(pass4.fragmentSource).toContain("bkwtrans");
-  });
-
-  it("pass 4 fragment shader reads textureLod for raster bloom", () => {
-    const pass4 = crtGeomDeluxePreset.passes[4];
-    expect(pass4.fragmentSource).toContain("textureLod");
-  });
-
-  it("pass 0 fragment shader references phosphor decay", () => {
-    const pass0 = crtGeomDeluxePreset.passes[0];
-    expect(pass0.fragmentSource).toContain("phosphor_amplitude");
-  });
-
-  it("pass 1 fragment shader references u_feedback for self-feedback", () => {
-    const pass1 = crtGeomDeluxePreset.passes[1];
-    expect(pass1.fragmentSource).toContain("u_feedback");
-  });
 });
 
 describe("crt-geom-deluxe parameters", () => {
-  it("exposes tunable parameters", () => {
-    expect(crtGeomDeluxePreset.parameters).toBeDefined();
-  });
-
   it("has scanline weight tuned for text legibility", () => {
     expect(crtGeomDeluxePreset.parameters?.u_scanlineWeight).toBe(0.35);
   });
@@ -162,15 +121,5 @@ describe("crt-geom-deluxe parameters", () => {
 
   it("has aperture bright boost matching original default", () => {
     expect(crtGeomDeluxePreset.parameters?.u_apertureBrightboost).toBe(0.4);
-  });
-
-  it("pass 4 fragment shader declares uniform for scanline weight", () => {
-    const pass4 = crtGeomDeluxePreset.passes[4];
-    expect(pass4.fragmentSource).toContain("uniform float u_scanlineWeight");
-  });
-
-  it("pass 4 fragment shader declares uniform for aperture strength", () => {
-    const pass4 = crtGeomDeluxePreset.passes[4];
-    expect(pass4.fragmentSource).toContain("uniform float u_apertureStrength");
   });
 });

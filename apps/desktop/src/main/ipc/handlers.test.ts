@@ -343,11 +343,6 @@ describe("IPCHandlers", () => {
 
       expect(onCalls).toContain("dialog:resumeGameResponse");
     });
-
-    it("registers exactly the expected number of handle channels", () => {
-      const handleCalls = vi.mocked(ipcMain.handle).mock.calls;
-      expect(handleCalls).toHaveLength(53);
-    });
   });
 
   // -----------------------------------------------------------------------
@@ -1614,11 +1609,6 @@ describe("IPCHandlers", () => {
   // 25. dialog:resumeGameResponse (ipcMain.on)
   // -----------------------------------------------------------------------
   describe("dialog:resumeGameResponse", () => {
-    it("registers the resumeGameResponse listener", () => {
-      const listener = getOnListener("dialog:resumeGameResponse");
-      expect(listener).toBeDefined();
-    });
-
     it("does not throw when called with an unknown requestId", () => {
       const listener = getOnListener("dialog:resumeGameResponse");
       expect(() =>

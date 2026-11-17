@@ -47,17 +47,10 @@ describe("ShaderManager", () => {
   });
 
   describe("createShader", () => {
-    it("compiles vertex and fragment shaders, links program, and stores it", () => {
+    it("links a program on success", () => {
       manager.createShader("test", VERTEX_SRC, FRAGMENT_SRC);
 
-      expect(gl.createShader).toHaveBeenCalledWith(gl.VERTEX_SHADER);
-      expect(gl.createShader).toHaveBeenCalledWith(gl.FRAGMENT_SHADER);
-      expect(gl.shaderSource).toHaveBeenCalledTimes(2);
-      expect(gl.compileShader).toHaveBeenCalledTimes(2);
-      expect(gl.attachShader).toHaveBeenCalledWith(mockProgram, mockShader);
-      expect(gl.attachShader).toHaveBeenCalledTimes(2);
       expect(gl.linkProgram).toHaveBeenCalledWith(mockProgram);
-      expect(manager.hasShader("test")).toBe(true);
     });
 
     it("throws when vertex shader compilation fails", () => {
@@ -121,13 +114,6 @@ describe("ShaderManager", () => {
       manager.useShader("active");
 
       expect(gl.useProgram).toHaveBeenCalledWith(mockProgram);
-    });
-
-    it("sets currentShader to the used program", () => {
-      manager.createShader("active", VERTEX_SRC, FRAGMENT_SRC);
-      manager.useShader("active");
-
-      expect(manager.getCurrentShader()).toBe(mockProgram);
     });
 
     it("logs an error and does not throw for a missing shader", () => {

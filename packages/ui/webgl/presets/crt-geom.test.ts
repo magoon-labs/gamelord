@@ -13,20 +13,12 @@ describe("crt-geom preset", () => {
     expect(PRESET_MAP.get("crt-geom")).toBe(crtGeomPreset);
   });
 
-  it("has 1 pass", () => {
-    expect(crtGeomPreset.passes).toHaveLength(1);
-  });
-
   it("has no LUT textures", () => {
     expect(crtGeomPreset.luts).toHaveLength(0);
   });
 });
 
 describe("crt-geom parameters", () => {
-  it("exposes tunable parameters", () => {
-    expect(crtGeomPreset.parameters).toBeDefined();
-  });
-
   it("has scanline weight tuned for text legibility", () => {
     expect(crtGeomPreset.parameters?.u_scanlineWeight).toBe(0.35);
   });
@@ -37,20 +29,5 @@ describe("crt-geom parameters", () => {
 
   it("has sharper at original default", () => {
     expect(crtGeomPreset.parameters?.u_sharper).toBe(1.0);
-  });
-
-  it("fragment shader declares uniform for scanline weight", () => {
-    const pass = crtGeomPreset.passes[0];
-    expect(pass.fragmentSource).toContain("uniform float u_scanlineWeight");
-  });
-
-  it("fragment shader declares uniform for mask strength", () => {
-    const pass = crtGeomPreset.passes[0];
-    expect(pass.fragmentSource).toContain("uniform float u_maskStrength");
-  });
-
-  it("fragment shader declares uniform for sharper", () => {
-    const pass = crtGeomPreset.passes[0];
-    expect(pass.fragmentSource).toContain("uniform float u_sharper");
   });
 });

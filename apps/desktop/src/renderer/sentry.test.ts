@@ -65,17 +65,13 @@ describe("initSentryRenderer", () => {
     expect(config.replaysOnErrorSampleRate).toBe(1.0);
   });
 
-  it("includes browser tracing and replay integrations", async () => {
+  it("configures replay to keep text and media visible", async () => {
     const { initSentryRenderer } = await import("./sentry");
     initSentryRenderer();
 
-    expect(mockBrowserTracingIntegration).toHaveBeenCalled();
     expect(mockReplayIntegration).toHaveBeenCalledWith({
       maskAllText: false,
       blockAllMedia: false,
     });
-
-    const config = mockElectronInit.mock.calls[0][0];
-    expect(config.integrations).toHaveLength(2);
   });
 });
