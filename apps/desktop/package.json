@@ -38,15 +38,15 @@
     "@vitejs/plugin-react": "^6.2.1",
     "agent-react-devtools": "^0.5.0",
     "agentation": "^3.0.2",
-    "autoprefixer": "^10.6.2",
-    "dotenv": "^18.0.9",
-    "electron": "45.2.3",
+    "autoprefixer": "^10.7.0",
+    "dotenv": "^18.0.10",
+    "electron": "45.4.1",
     "electron-vite": "^6.0.0",
     "happy-dom": "^21.0.4",
-    "lucide-react": "^1.70.0",
+    "lucide-react": "^1.77.0",
     "node-addon-api": "^8.9.2",
     "node-gyp": "^13.0.2",
-    "postcss": "^8.5.32",
+    "postcss": "^8.5.33",
     "react": "^19.3.1",
     "react-devtools-core": "^8.0.0",
     "react-dom": "^19.3.1",
@@ -54,7 +54,7 @@
     "ts-node": "^10.9.2",
     "typescript": "~5.9.3",
     "vite": "^8.3.6",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   },
   "productName": "GameLord"
 }
